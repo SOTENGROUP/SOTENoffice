@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@clerk/nextjs";
 
-import { Badge } from "@/components/ui/badge";
+import { Clock } from "lucide-react";
+import { Cell, Pie, PieChart } from "recharts";
+
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipCard,
+  type ChartConfig,
+} from "@/components/charts/chart";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { getApiBaseUrl } from "@/lib/api-base";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +35,6 @@ type BoardApprovalsPanelProps = {
   approvals?: Approval[];
   isLoading?: boolean;
   error?: string | null;
-  onRefresh?: () => void;
   onDecision?: (approvalId: string, status: "approved" | "rejected") => void;
   scrollable?: boolean;
 };
@@ -45,16 +51,24 @@ const formatTimestamp = (value?: string | null) => {
   });
 };
 
-const statusBadgeVariant = (status: string) => {
-  if (status === "approved") return "success";
-  if (status === "rejected") return "danger";
-  return "outline";
+const statusBadgeClass = (status: string) => {
+  if (status === "approved") {
+    return "bg-emerald-50 text-emerald-700";
+  }
+  if (status === "rejected") {
+    return "bg-rose-50 text-rose-700";
+  }
+  return "bg-amber-100 text-amber-700";
 };
 
-const confidenceVariant = (confidence: number) => {
-  if (confidence >= 90) return "success";
-  if (confidence >= 80) return "accent";
-  return "warning";
+const confidenceBadgeClass = (confidence: number) => {
+  if (confidence >= 90) {
+    return "bg-emerald-50 text-emerald-700";
+  }
+  if (confidence >= 80) {
+    return "bg-amber-100 text-amber-700";
+  }
+  return "bg-orange-100 text-orange-700";
 };
 
 const humanizeAction = (value: string) =>
@@ -66,6 +80,73 @@ const humanizeAction = (value: string) =>
         .replace(/\b\w/g, (char) => char.toUpperCase())
     )
     .join(" · ");
+
+const formatStatusLabel = (status: string) =>
+  status
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const statusDotClass = (status: string) => {
+  if (status === "approved") return "bg-emerald-500";
+  if (status === "rejected") return "bg-rose-500";
+  return "bg-amber-500";
+};
+
+const rubricColors = [
+  "#0f172a",
+  "#1d4ed8",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+];
+
+type TooltipValue = number | string | Array<number | string>;
+
+const formatRubricTooltipValue = (
+  value?: TooltipValue,
+  name?: TooltipValue,
+  item?:
+    | {
+        color?: string | null;
+        payload?: {
+          name?: string;
+          fill?: string;
+          percent?: number;
+          percentLabel?: string;
+        };
+      }
+    | null,
+) => {
+  const payload = item?.payload;
+  const label =
+    payload?.name ??
+    (typeof name === "string" || typeof name === "number" ? String(name) : "");
+  const percentLabel =
+    payload?.percentLabel ??
+    (typeof payload?.percent === "number" && Number.isFinite(payload.percent)
+      ? `${payload.percent.toFixed(1)}%`
+      : null);
+  const fallback =
+    value === null || value === undefined ? "" : String(value ?? "");
+  const displayValue = percentLabel ?? fallback;
+  const indicatorColor = payload?.fill ?? item?.color ?? "#94a3b8";
+
+  return (
+    <div className="flex w-full items-center justify-between gap-3">
+      <span className="flex items-center gap-2 text-slate-600">
+        <span
+          className="h-2.5 w-2.5 rounded-[2px]"
+          style={{ backgroundColor: indicatorColor }}
+        />
+        <span>{label}</span>
+      </span>
+      <span className="font-mono font-medium tabular-nums text-slate-900">
+        {displayValue}
+      </span>
+    </div>
+  );
+};
 
 const payloadValue = (payload: Approval["payload"], key: string) => {
   if (!payload) return null;
@@ -87,6 +168,7 @@ const approvalSummary = (approval: Approval) => {
     payloadValue(payload, "assignedAgentId");
   const reason = payloadValue(payload, "reason");
   const title = payloadValue(payload, "title");
+  const description = payloadValue(payload, "description");
   const role = payloadValue(payload, "role");
   const isAssign = approval.action_type.includes("assign");
   const rows: Array<{ label: string; value: string }> = [];
@@ -99,7 +181,7 @@ const approvalSummary = (approval: Approval) => {
   }
   if (title) rows.push({ label: "Title", value: title });
   if (role) rows.push({ label: "Role", value: role });
-  return { taskId, reason, rows };
+  return { taskId, reason, rows, description };
 };
 
 export function BoardApprovalsPanel({
@@ -107,7 +189,6 @@ export function BoardApprovalsPanel({
   approvals: externalApprovals,
   isLoading: externalLoading,
   error: externalError,
-  onRefresh,
   onDecision,
   scrollable = false,
 }: BoardApprovalsPanelProps) {
@@ -116,9 +197,13 @@ export function BoardApprovalsPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const lastDecisionRef = useRef<string | null>(null);
   const usingExternal = Array.isArray(externalApprovals);
-  const approvals = usingExternal ? externalApprovals ?? [] : internalApprovals;
+  const approvals = useMemo(
+    () => (usingExternal ? externalApprovals ?? [] : internalApprovals),
+    [externalApprovals, internalApprovals, usingExternal],
+  );
   const loadingState = usingExternal ? externalLoading ?? false : isLoading;
   const errorState = usingExternal ? externalError ?? null : error;
 
@@ -154,6 +239,7 @@ export function BoardApprovalsPanel({
 
   const handleDecision = useCallback(
     async (approvalId: string, status: "approved" | "rejected") => {
+      lastDecisionRef.current = approvalId;
       if (onDecision) {
         onDecision(approvalId, status);
         return;
@@ -207,257 +293,392 @@ export function BoardApprovalsPanel({
     return { pending, resolved };
   }, [approvals]);
 
-  const toggleExpanded = useCallback((approvalId: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(approvalId)) {
-        next.delete(approvalId);
-      } else {
-        next.add(approvalId);
-      }
-      return next;
-    });
-  }, []);
+  const orderedApprovals = useMemo(
+    () => [...sortedApprovals.pending, ...sortedApprovals.resolved],
+    [sortedApprovals.pending, sortedApprovals.resolved]
+  );
+
+  useEffect(() => {
+    if (orderedApprovals.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    if (!selectedId || !orderedApprovals.some((item) => item.id === selectedId)) {
+      setSelectedId(orderedApprovals[0].id);
+    }
+  }, [orderedApprovals, selectedId]);
+
+  const selectedApproval = useMemo(() => {
+    if (!selectedId) return null;
+    return orderedApprovals.find((item) => item.id === selectedId) ?? null;
+  }, [orderedApprovals, selectedId]);
+
+  useEffect(() => {
+    if (!lastDecisionRef.current) return;
+    const resolvedId = lastDecisionRef.current;
+    const pendingNext = sortedApprovals.pending.find(
+      (item) => item.id !== resolvedId,
+    );
+    if (pendingNext) {
+      setSelectedId(pendingNext.id);
+    }
+    lastDecisionRef.current = null;
+  }, [sortedApprovals.pending]);
+
+  const pendingCount = sortedApprovals.pending.length;
+  const resolvedCount = sortedApprovals.resolved.length;
 
   return (
-    <Card className={scrollable ? "flex h-full flex-col" : undefined}>
-      <CardHeader className="flex flex-col gap-4 border-b border-[color:var(--border)] pb-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-              Approvals
-            </p>
-            <p className="mt-1 text-lg font-semibold text-strong">
-              {sortedApprovals.pending.length} pending
-            </p>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onRefresh ?? loadApprovals}
-          >
-            Refresh
-          </Button>
+    <div className={cn("space-y-6", scrollable && "h-full")}>
+
+      {errorState ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {errorState}
         </div>
-        <p className="text-sm text-muted">
-          Review lead-agent decisions that require human approval.
-        </p>
-      </CardHeader>
-      <CardContent
-        className={cn(
-          "space-y-4 pt-5",
-          scrollable && "flex-1 overflow-y-auto"
-        )}
-      >
-        {errorState ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {errorState}
+      ) : null}
+      {loadingState ? (
+        <p className="text-sm text-slate-500">Loading approvals…</p>
+      ) : pendingCount === 0 && resolvedCount === 0 ? (
+        <p className="text-sm text-slate-500">No approvals yet.</p>
+      ) : (
+        <div
+          className={cn(
+            "grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]",
+            scrollable && "h-full"
+          )}
+        >
+          <div
+            className={cn(
+              "overflow-hidden rounded-xl border border-slate-200 bg-white",
+              scrollable && "flex min-h-0 flex-col"
+            )}
+          >
+            <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Unapproved tasks
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {pendingCount} pending · {resolvedCount} resolved
+              </p>
+            </div>
+            <div
+              className={cn(
+                "divide-y divide-slate-100",
+                scrollable && "min-h-0 overflow-y-auto"
+              )}
+            >
+              {orderedApprovals.map((approval) => {
+                const summary = approvalSummary(approval);
+                const isSelected = selectedId === approval.id;
+                const isPending = approval.status === "pending";
+                const titleRow = summary.rows.find(
+                  (row) => row.label.toLowerCase() === "title"
+                );
+                const fallbackRow = summary.rows.find(
+                  (row) => row.label.toLowerCase() !== "title"
+                );
+                const primaryLabel =
+                  titleRow?.value ?? fallbackRow?.value ?? "Untitled";
+                return (
+                  <button
+                    key={approval.id}
+                    type="button"
+                    onClick={() => setSelectedId(approval.id)}
+                    className={cn(
+                      "w-full px-4 py-4 text-left transition hover:bg-slate-50",
+                      isSelected &&
+                        "bg-amber-50 border-l-2 border-amber-500",
+                      !isPending && "opacity-60"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        {humanizeAction(approval.action_type)}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-[3px] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em]",
+                          statusBadgeClass(approval.status)
+                        )}
+                      >
+                        {formatStatusLabel(approval.status)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">
+                      {primaryLabel}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                      <Clock className="h-3.5 w-3.5 opacity-60" />
+                      <span>{formatTimestamp(approval.created_at)}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        ) : null}
-        {loadingState ? (
-          <p className="text-sm text-muted">Loading approvals…</p>
-        ) : sortedApprovals.pending.length === 0 &&
-          sortedApprovals.resolved.length === 0 ? (
-          <p className="text-sm text-muted">No approvals yet.</p>
-        ) : (
-          <div className="space-y-6">
-            {sortedApprovals.pending.length > 0 ? (
-              <div className="space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                  Pending
-                </p>
-                <div className="divide-y divide-[color:var(--border)] rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]">
-                  {sortedApprovals.pending.map((approval) => {
-                    const summary = approvalSummary(approval);
-                    const summaryLine = summary.rows
-                      .map((row) => `${row.label}: ${row.value}`)
-                      .join(" • ");
-                    const detailsPayload = JSON.stringify(
-                      {
-                        payload: approval.payload ?? null,
-                        rubric_scores: approval.rubric_scores ?? null,
-                      },
-                      null,
-                      2
-                    );
-                    const isExpanded = expandedIds.has(approval.id);
-                    return (
-                      <div key={approval.id} className="space-y-3 px-5 py-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <p className="text-sm font-semibold text-strong">
-                              {humanizeAction(approval.action_type)}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                              <span>
-                                Requested {formatTimestamp(approval.created_at)}
-                              </span>
-                              {summaryLine ? (
-                                <>
-                                  <span className="text-slate-300">•</span>
-                                  <span className="truncate">{summaryLine}</span>
-                                </>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant={confidenceVariant(approval.confidence)}>
-                              {approval.confidence}% confidence
-                            </Badge>
-                            <Badge variant={statusBadgeVariant(approval.status)}>
-                              {approval.status}
-                            </Badge>
-                          </div>
-                        </div>
-                        {summary.reason ? (
-                          <p className="text-sm text-muted">{summary.reason}</p>
-                        ) : null}
-                        {summary.rows.length > 0 ? (
-                          <dl className="grid gap-2 text-xs text-muted sm:grid-cols-2">
-                            {summary.rows.map((row) => (
-                              <div key={`${approval.id}-${row.label}`}>
-                                <dt className="font-semibold uppercase tracking-wide text-slate-500">
-                                  {row.label}
-                                </dt>
-                                <dd className="mt-1 text-sm text-strong">
-                                  {row.value}
-                                </dd>
-                              </div>
-                            ))}
-                          </dl>
-                        ) : null}
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
-                          <button
-                            type="button"
-                            className="font-semibold text-slate-700 hover:text-slate-900"
-                            onClick={() => toggleExpanded(approval.id)}
-                          >
-                            {isExpanded ? "Hide raw" : "View raw"}
-                          </button>
-                          <span>JSON payload + rubric</span>
-                        </div>
-                        {isExpanded ? (
-                          <pre className="max-h-40 overflow-auto rounded-xl bg-slate-950 px-3 py-3 text-[11px] text-slate-100">
-                            {detailsPayload}
-                          </pre>
-                        ) : null}
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleDecision(approval.id, "approved")}
-                            disabled={updatingId === approval.id}
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDecision(approval.id, "rejected")}
-                            disabled={updatingId === approval.id}
-                            className={cn(
-                              "border-[color:var(--danger)] text-[color:var(--danger)] hover:text-[color:var(--danger)]"
-                            )}
-                          >
-                            Reject
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+
+          <div
+            className={cn(
+              "overflow-hidden rounded-xl border border-slate-200 bg-white",
+              scrollable && "flex min-h-0 flex-col"
+            )}
+          >
+            <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                {selectedApproval?.status === "pending"
+                  ? "Latest unapproved task"
+                  : "Approval detail"}
+              </p>
+            </div>
+            {!selectedApproval ? (
+              <div className="flex h-full items-center justify-center px-6 py-10 text-sm text-slate-500">
+                Select an approval to review details.
               </div>
-            ) : null}
-            {sortedApprovals.resolved.length > 0 ? (
-              <div className="space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                  Resolved
-                </p>
-                <div className="divide-y divide-[color:var(--border)] rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]">
-                  {sortedApprovals.resolved.map((approval) => {
-                    const summary = approvalSummary(approval);
-                    const summaryLine = summary.rows
-                      .map((row) => `${row.label}: ${row.value}`)
-                      .join(" • ");
-                    const detailsPayload = JSON.stringify(
-                      {
-                        payload: approval.payload ?? null,
-                        rubric_scores: approval.rubric_scores ?? null,
-                      },
-                      null,
-                      2
-                    );
-                    const isExpanded = expandedIds.has(approval.id);
-                    return (
-                      <div key={approval.id} className="space-y-3 px-5 py-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <p className="text-sm font-semibold text-strong">
-                              {humanizeAction(approval.action_type)}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                              <span>
-                                Requested {formatTimestamp(approval.created_at)}
-                              </span>
-                              {summaryLine ? (
-                                <>
-                                  <span className="text-slate-300">•</span>
-                                  <span className="truncate">{summaryLine}</span>
-                                </>
-                              ) : null}
-                            </div>
+            ) : (
+              (() => {
+                const summary = approvalSummary(selectedApproval);
+                const titleRow = summary.rows.find(
+                  (row) => row.label.toLowerCase() === "title"
+                );
+                const titleText = titleRow?.value?.trim() ?? "";
+                const descriptionText = summary.description?.trim() ?? "";
+                const reasoningText = summary.reason?.trim() ?? "";
+                const extraRows = summary.rows.filter((row) => {
+                  const normalized = row.label.toLowerCase();
+                  if (normalized === "title") return false;
+                  if (normalized === "task") return false;
+                  if (normalized === "assignee") return false;
+                  return true;
+                });
+                const rubricEntries = Object.entries(
+                  selectedApproval.rubric_scores ?? {}
+                ).map(([key, value]) => ({
+                  label: key
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (char) => char.toUpperCase()),
+                  value,
+                }));
+                const rubricTotal = rubricEntries.reduce(
+                  (total, entry) => total + entry.value,
+                  0,
+                );
+                const hasRubric = rubricEntries.length > 0 && rubricTotal > 0;
+                const rubricChartData = rubricEntries.map((entry, index) => {
+                  const percent = rubricTotal > 0 ? (entry.value / rubricTotal) * 100 : 0;
+                  return {
+                    key: entry.label.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+                    name: entry.label,
+                    value: entry.value,
+                    percent,
+                    percentLabel: `${percent.toFixed(1)}%`,
+                    fill: rubricColors[index % rubricColors.length],
+                  };
+                });
+                const rubricChartConfig = rubricChartData.reduce<ChartConfig>(
+                  (accumulator, entry) => {
+                    accumulator[entry.key] = {
+                      label: entry.name,
+                      color: entry.fill,
+                    };
+                    return accumulator;
+                  },
+                  {},
+                );
+
+                return (
+                  <div className="flex h-full flex-col gap-6 px-6 py-6">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-semibold text-slate-900">
+                          {humanizeAction(selectedApproval.action_type)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Requested {formatTimestamp(selectedApproval.created_at)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span
+                          className={cn(
+                            "rounded-md px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]",
+                            confidenceBadgeClass(selectedApproval.confidence)
+                          )}
+                        >
+                          {selectedApproval.confidence}% confidence
+                        </span>
+                        {selectedApproval.status === "pending" ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() =>
+                                handleDecision(selectedApproval.id, "approved")
+                              }
+                              disabled={updatingId === selectedApproval.id}
+                              className="bg-slate-900 text-white hover:bg-slate-800"
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                handleDecision(selectedApproval.id, "rejected")
+                              }
+                              disabled={updatingId === selectedApproval.id}
+                              className="border-slate-300 text-slate-700 hover:bg-slate-100"
+                            >
+                              Reject
+                            </Button>
                           </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant={confidenceVariant(approval.confidence)}>
-                              {approval.confidence}% confidence
-                            </Badge>
-                            <Badge variant={statusBadgeVariant(approval.status)}>
-                              {approval.status}
-                            </Badge>
-                          </div>
-                        </div>
-                        {summary.reason ? (
-                          <p className="text-sm text-muted">{summary.reason}</p>
-                        ) : null}
-                        {summary.rows.length > 0 ? (
-                          <dl className="grid gap-2 text-xs text-muted sm:grid-cols-2">
-                            {summary.rows.map((row) => (
-                              <div key={`${approval.id}-${row.label}`}>
-                                <dt className="font-semibold uppercase tracking-wide text-slate-500">
-                                  {row.label}
-                                </dt>
-                                <dd className="mt-1 text-sm text-strong">
-                                  {row.value}
-                                </dd>
-                              </div>
-                            ))}
-                          </dl>
-                        ) : null}
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
-                          <button
-                            type="button"
-                            className="font-semibold text-slate-700 hover:text-slate-900"
-                            onClick={() => toggleExpanded(approval.id)}
-                          >
-                            {isExpanded ? "Hide raw" : "View raw"}
-                          </button>
-                          <span>JSON payload + rubric</span>
-                        </div>
-                        {isExpanded ? (
-                          <pre className="max-h-40 overflow-auto rounded-xl bg-slate-950 px-3 py-3 text-[11px] text-slate-100">
-                            {detailsPayload}
-                          </pre>
                         ) : null}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
+                    </div>
+
+                    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                      <span
+                        className={cn(
+                          "h-2 w-2 rounded-full",
+                          statusDotClass(selectedApproval.status)
+                        )}
+                      />
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Status
+                        </p>
+                        <p className="text-sm font-medium text-slate-700">
+                          {formatStatusLabel(selectedApproval.status)} ·{" "}
+                          {selectedApproval.status === "pending"
+                            ? "Awaiting your decision"
+                            : "Decision complete"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {titleText ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Title
+                        </p>
+                        <div className="text-sm font-medium text-slate-900">
+                          {titleText}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {descriptionText ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Description
+                        </p>
+                        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                          {descriptionText}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {reasoningText ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Lead reasoning
+                        </p>
+                        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                          <p>{reasoningText}</p>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {extraRows.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Details
+                        </p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {extraRows.map((row) => (
+                            <div
+                              key={`${selectedApproval.id}-${row.label}`}
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                            >
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                {row.label}
+                              </p>
+                              <p className="mt-1 text-sm font-medium text-slate-900">
+                                {row.value}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {hasRubric ? (
+                      <div className="space-y-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Rubric scores
+                        </p>
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                          <div className="w-full space-y-2 sm:max-w-[220px]">
+                            {rubricChartData.map((entry) => (
+                              <div
+                                key={entry.key}
+                                className="flex items-center justify-between gap-4 text-xs"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="h-2.5 w-2.5 rounded-full"
+                                    style={{ backgroundColor: entry.fill }}
+                                  />
+                                  <span className="text-slate-700">
+                                    {entry.name}
+                                  </span>
+                                </div>
+                                <span className="font-medium tabular-nums text-slate-900">
+                                  {entry.percentLabel}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          <ChartContainer
+                            config={rubricChartConfig}
+                            className="h-56 w-full max-w-[260px] aspect-square"
+                          >
+                            <PieChart>
+                              {rubricTotal > 0 ? (
+                                <ChartTooltip
+                                  cursor={false}
+                                  content={
+                                    <ChartTooltipCard
+                                      formatter={formatRubricTooltipValue}
+                                      hideLabel
+                                    />
+                                  }
+                                />
+                              ) : null}
+                              <Pie
+                                data={rubricChartData}
+                                dataKey="value"
+                                nameKey="name"
+                                innerRadius={50}
+                                outerRadius={80}
+                                strokeWidth={2}
+                              >
+                                {rubricChartData.map((entry) => (
+                                  <Cell key={entry.key} fill={entry.fill} />
+                                ))}
+                              </Pie>
+                            </PieChart>
+                          </ChartContainer>
+                        </div>
+                      </div>
+                    ) : null}
+
+                  </div>
+                );
+              })()
+            )}
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
   );
 }
 

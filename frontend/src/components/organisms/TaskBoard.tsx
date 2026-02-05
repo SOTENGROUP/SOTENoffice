@@ -14,14 +14,11 @@ type Task = {
   due_at?: string | null;
   assigned_agent_id?: string | null;
   assignee?: string;
-  approvalsCount?: number;
   approvalsPendingCount?: number;
 };
 
 type TaskBoardProps = {
   tasks: Task[];
-  onCreateTask: () => void;
-  isCreateDisabled?: boolean;
   onTaskSelect?: (task: Task) => void;
   onTaskMove?: (taskId: string, status: string) => void;
 };
@@ -73,8 +70,6 @@ const formatDueDate = (value?: string | null) => {
 
 export function TaskBoard({
   tasks,
-  onCreateTask,
-  isCreateDisabled = false,
   onTaskSelect,
   onTaskMove,
 }: TaskBoardProps) {
@@ -132,8 +127,7 @@ export function TaskBoard({
       }
     };
 
-  const handleDragLeave =
-    (status: string) => (_event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = (status: string) => () => {
       if (activeColumn === status) {
         setActiveColumn(null);
       }
@@ -181,7 +175,6 @@ export function TaskBoard({
                       priority={task.priority}
                       assignee={task.assignee}
                       due={formatDueDate(task.due_at)}
-                      approvalsCount={task.approvalsCount}
                       approvalsPendingCount={task.approvalsPendingCount}
                       onClick={() => onTaskSelect?.(task)}
                       draggable

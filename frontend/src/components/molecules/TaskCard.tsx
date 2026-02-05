@@ -7,7 +7,6 @@ interface TaskCardProps {
   priority?: string;
   assignee?: string;
   due?: string;
-  approvalsCount?: number;
   approvalsPendingCount?: number;
   onClick?: () => void;
   draggable?: boolean;
@@ -21,7 +20,6 @@ export function TaskCard({
   priority,
   assignee,
   due,
-  approvalsCount = 0,
   approvalsPendingCount = 0,
   onClick,
   draggable = false,

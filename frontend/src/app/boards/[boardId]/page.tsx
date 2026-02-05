@@ -7,7 +7,6 @@ import { SignInButton, SignedIn, SignedOut, useAuth } from "@clerk/nextjs";
 import { MessageSquare, Pencil, Settings, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
-import { BoardApprovalsPanel } from "@/components/BoardApprovalsPanel";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { TaskBoard } from "@/components/organisms/TaskBoard";
 import { DashboardShell } from "@/components/templates/DashboardShell";
@@ -157,7 +156,6 @@ export default function BoardDetailPage() {
   const approvalsRef = useRef<Approval[]>([]);
   const agentsRef = useRef<Agent[]>([]);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isApprovalsOpen, setIsApprovalsOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const [approvals, setApprovals] = useState<Approval[]>([]);
@@ -172,6 +170,7 @@ export default function BoardDetailPage() {
   const [isChatSending, setIsChatSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatMessagesRef = useRef<BoardChatMessage[]>([]);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
   const [isDeletingTask, setIsDeletingTask] = useState(false);
   const [deleteTaskError, setDeleteTaskError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
@@ -302,6 +301,14 @@ export default function BoardDetailPage() {
   useEffect(() => {
     chatMessagesRef.current = chatMessages;
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (!isChatOpen) return;
+    const timeout = window.setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, 50);
+    return () => window.clearTimeout(timeout);
+  }, [chatMessages, isChatOpen]);
 
   const loadApprovals = useCallback(async () => {
     if (!isSignedIn || !boardId) return;
@@ -1433,7 +1440,7 @@ export default function BoardDetailPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => setIsApprovalsOpen(true)}
+                    onClick={() => router.push(`/boards/${boardId}/approvals`)}
                     className="relative"
                   >
                     Approvals
@@ -1545,8 +1552,6 @@ export default function BoardDetailPage() {
                   {viewMode === "board" ? (
                     <TaskBoard
                       tasks={displayTasks}
-                      onCreateTask={() => setIsDialogOpen(true)}
-                      isCreateDisabled={isCreating}
                       onTaskSelect={openComments}
                       onTaskMove={handleTaskMove}
                     />
@@ -1746,7 +1751,7 @@ export default function BoardDetailPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setIsApprovalsOpen(true)}
+                  onClick={() => router.push(`/boards/${boardId}/approvals`)}
                 >
                   View all
                 </Button>
@@ -1926,33 +1931,6 @@ export default function BoardDetailPage() {
         </div>
       </aside>
 
-      <Dialog open={isApprovalsOpen} onOpenChange={setIsApprovalsOpen}>
-        <DialogContent
-          aria-label="Approvals"
-          className="flex h-[85vh] max-w-3xl flex-col overflow-hidden"
-        >
-          <DialogHeader>
-            <DialogTitle>Approvals</DialogTitle>
-            <DialogDescription>
-              Review pending decisions from your lead agent.
-            </DialogDescription>
-          </DialogHeader>
-          {boardId ? (
-            <div className="flex-1 overflow-hidden">
-              <BoardApprovalsPanel
-                boardId={boardId}
-                approvals={approvals}
-                isLoading={isApprovalsLoading}
-                error={approvalsError}
-                onDecision={handleApprovalDecision}
-                onRefresh={loadApprovals}
-                scrollable
-              />
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
       <aside
         className={cn(
           "fixed right-0 top-0 z-50 h-full w-[560px] max-w-[96vw] transform border-l border-slate-200 bg-white shadow-2xl transition-transform",
@@ -2026,6 +2004,7 @@ export default function BoardDetailPage() {
                   </div>
                 ))
               )}
+              <div ref={chatEndRef} />
             </div>
             <div className="mt-4 space-y-2">
               <Textarea
