@@ -56,6 +56,7 @@ import type {
   TaskCommentRead,
   TaskRead,
 } from "@/api/generated/model";
+import { createExponentialBackoff } from "@/lib/backoff";
 import { cn } from "@/lib/utils";
 
 type Board = BoardRead;
@@ -122,6 +123,13 @@ const EMOJI_GLYPHS: Record<string, string> = {
   ":memo:": "📝",
   ":brain:": "🧠",
 };
+
+const SSE_RECONNECT_BACKOFF = {
+  baseMs: 1_000,
+  factor: 2,
+  jitter: 0.2,
+  maxMs: 5 * 60_000,
+} as const;
 
 const MARKDOWN_TABLE_COMPONENTS: Components = {
   table: ({ node: _node, className, ...props }) => (
@@ -344,6 +352,8 @@ export default function BoardDetailPage() {
     if (!isSignedIn || !boardId || !board) return;
     let isCancelled = false;
     const abortController = new AbortController();
+    const backoff = createExponentialBackoff(SSE_RECONNECT_BACKOFF);
+    let reconnectTimeout: number | undefined;
 
     const connect = async () => {
       try {
@@ -372,6 +382,11 @@ export default function BoardDetailPage() {
         while (!isCancelled) {
           const { value, done } = await reader.read();
           if (done) break;
+          if (value && value.length) {
+            // Consider the stream "healthy" once we receive any bytes (including pings),
+            // then reset the backoff for future reconnects.
+            backoff.reset();
+          }
           buffer += decoder.decode(value, { stream: true });
           buffer = buffer.replace(/\r\n/g, "\n");
           let boundary = buffer.indexOf("\n\n");
@@ -414,23 +429,37 @@ export default function BoardDetailPage() {
           }
         }
       } catch {
-        if (!isCancelled) {
-          setTimeout(connect, 3000);
+        // Reconnect handled below.
+      }
+
+      if (!isCancelled) {
+        if (reconnectTimeout !== undefined) {
+          window.clearTimeout(reconnectTimeout);
         }
+        const delay = backoff.nextDelayMs();
+        reconnectTimeout = window.setTimeout(() => {
+          reconnectTimeout = undefined;
+          void connect();
+        }, delay);
       }
     };
 
-    connect();
+    void connect();
     return () => {
       isCancelled = true;
       abortController.abort();
+      if (reconnectTimeout !== undefined) {
+        window.clearTimeout(reconnectTimeout);
+      }
     };
-  }, [boardId, isSignedIn]);
+  }, [board, boardId, isSignedIn]);
 
   useEffect(() => {
     if (!isSignedIn || !boardId || !board) return;
     let isCancelled = false;
     const abortController = new AbortController();
+    const backoff = createExponentialBackoff(SSE_RECONNECT_BACKOFF);
+    let reconnectTimeout: number | undefined;
 
     const connect = async () => {
       try {
@@ -458,6 +487,9 @@ export default function BoardDetailPage() {
         while (!isCancelled) {
           const { value, done } = await reader.read();
           if (done) break;
+          if (value && value.length) {
+            backoff.reset();
+          }
           buffer += decoder.decode(value, { stream: true });
           buffer = buffer.replace(/\r\n/g, "\n");
           let boundary = buffer.indexOf("\n\n");
@@ -529,16 +561,28 @@ export default function BoardDetailPage() {
           }
         }
       } catch {
-        if (!isCancelled) {
-          setTimeout(connect, 3000);
+        // Reconnect handled below.
+      }
+
+      if (!isCancelled) {
+        if (reconnectTimeout !== undefined) {
+          window.clearTimeout(reconnectTimeout);
         }
+        const delay = backoff.nextDelayMs();
+        reconnectTimeout = window.setTimeout(() => {
+          reconnectTimeout = undefined;
+          void connect();
+        }, delay);
       }
     };
 
-    connect();
+    void connect();
     return () => {
       isCancelled = true;
       abortController.abort();
+      if (reconnectTimeout !== undefined) {
+        window.clearTimeout(reconnectTimeout);
+      }
     };
   }, [board, boardId, isSignedIn]);
 
@@ -564,6 +608,8 @@ export default function BoardDetailPage() {
     if (!isSignedIn || !boardId || !board) return;
     let isCancelled = false;
     const abortController = new AbortController();
+    const backoff = createExponentialBackoff(SSE_RECONNECT_BACKOFF);
+    let reconnectTimeout: number | undefined;
 
     const connect = async () => {
       try {
@@ -590,6 +636,9 @@ export default function BoardDetailPage() {
         while (!isCancelled) {
           const { value, done } = await reader.read();
           if (done) break;
+          if (value && value.length) {
+            backoff.reset();
+          }
           buffer += decoder.decode(value, { stream: true });
           buffer = buffer.replace(/\r\n/g, "\n");
           let boundary = buffer.indexOf("\n\n");
@@ -668,16 +717,28 @@ export default function BoardDetailPage() {
           }
         }
       } catch {
-        if (!isCancelled) {
-          setTimeout(connect, 3000);
+        // Reconnect handled below.
+      }
+
+      if (!isCancelled) {
+        if (reconnectTimeout !== undefined) {
+          window.clearTimeout(reconnectTimeout);
         }
+        const delay = backoff.nextDelayMs();
+        reconnectTimeout = window.setTimeout(() => {
+          reconnectTimeout = undefined;
+          void connect();
+        }, delay);
       }
     };
 
-    connect();
+    void connect();
     return () => {
       isCancelled = true;
       abortController.abort();
+      if (reconnectTimeout !== undefined) {
+        window.clearTimeout(reconnectTimeout);
+      }
     };
   }, [board, boardId, isSignedIn, selectedTask?.id, pushLiveFeed]);
 
@@ -685,6 +746,8 @@ export default function BoardDetailPage() {
     if (!isSignedIn || !boardId) return;
     let isCancelled = false;
     const abortController = new AbortController();
+    const backoff = createExponentialBackoff(SSE_RECONNECT_BACKOFF);
+    let reconnectTimeout: number | undefined;
 
     const connect = async () => {
       try {
@@ -713,6 +776,9 @@ export default function BoardDetailPage() {
         while (!isCancelled) {
           const { value, done } = await reader.read();
           if (done) break;
+          if (value && value.length) {
+            backoff.reset();
+          }
           buffer += decoder.decode(value, { stream: true });
           buffer = buffer.replace(/\r\n/g, "\n");
           let boundary = buffer.indexOf("\n\n");
@@ -755,16 +821,28 @@ export default function BoardDetailPage() {
           }
         }
       } catch {
-        if (!isCancelled) {
-          setTimeout(connect, 3000);
+        // Reconnect handled below.
+      }
+
+      if (!isCancelled) {
+        if (reconnectTimeout !== undefined) {
+          window.clearTimeout(reconnectTimeout);
         }
+        const delay = backoff.nextDelayMs();
+        reconnectTimeout = window.setTimeout(() => {
+          reconnectTimeout = undefined;
+          void connect();
+        }, delay);
       }
     };
 
-    connect();
+    void connect();
     return () => {
       isCancelled = true;
       abortController.abort();
+      if (reconnectTimeout !== undefined) {
+        window.clearTimeout(reconnectTimeout);
+      }
     };
   }, [board, boardId, isSignedIn]);
 
