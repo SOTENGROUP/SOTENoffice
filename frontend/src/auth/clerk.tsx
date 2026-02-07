@@ -17,19 +17,31 @@ import {
 
 import type { ComponentProps } from "react";
 
+import { isLikelyValidClerkPublishableKey } from "@/auth/clerkKey";
+
+function isE2EAuthBypassEnabled(): boolean {
+  // Used only for Cypress E2E to keep tests secretless and deterministic.
+  // When enabled, we treat the user as signed in and skip Clerk entirely.
+  return process.env.NEXT_PUBLIC_E2E_AUTH_BYPASS === "1";
+}
+
 export function isClerkEnabled(): boolean {
-  // Invariant: Clerk is disabled ONLY when the publishable key is absent.
-  // If a key is present, we assume Clerk is intended to be enabled and we let
-  // Clerk fail fast if the key is invalid/misconfigured.
-  return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+  // IMPORTANT: keep this in sync with AuthProvider; otherwise components like
+  // <SignedOut/> may render without a <ClerkProvider/> and crash during prerender.
+  if (isE2EAuthBypassEnabled()) return false;
+  return isLikelyValidClerkPublishableKey(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+  );
 }
 
 export function SignedIn(props: { children: ReactNode }) {
+  if (isE2EAuthBypassEnabled()) return <>{props.children}</>;
   if (!isClerkEnabled()) return null;
   return <ClerkSignedIn>{props.children}</ClerkSignedIn>;
 }
 
 export function SignedOut(props: { children: ReactNode }) {
+  if (isE2EAuthBypassEnabled()) return null;
   if (!isClerkEnabled()) return <>{props.children}</>;
   return <ClerkSignedOut>{props.children}</ClerkSignedOut>;
 }
@@ -40,7 +52,9 @@ export function SignInButton(props: ComponentProps<typeof ClerkSignInButton>) {
   return <ClerkSignInButton {...props} />;
 }
 
-export function SignOutButton(props: ComponentProps<typeof ClerkSignOutButton>) {
+export function SignOutButton(
+  props: ComponentProps<typeof ClerkSignOutButton>,
+) {
   if (!isClerkEnabled()) return null;
   return <ClerkSignOutButton {...props} />;
 }
@@ -53,6 +67,15 @@ export function useUser() {
 }
 
 export function useAuth() {
+  if (isE2EAuthBypassEnabled()) {
+    return {
+      isLoaded: true,
+      isSignedIn: true,
+      userId: "e2e-user",
+      sessionId: "e2e-session",
+      getToken: async () => "e2e-token",
+    } as const;
+  }
   if (!isClerkEnabled()) {
     return {
       isLoaded: true,
