@@ -17,11 +17,14 @@ import {
 
 import type { ComponentProps } from "react";
 
+import { isLikelyValidClerkPublishableKey } from "@/auth/clerkKey";
+
 export function isClerkEnabled(): boolean {
-  // Invariant: Clerk is disabled ONLY when the publishable key is absent.
-  // If a key is present, we assume Clerk is intended to be enabled and we let
-  // Clerk fail fast if the key is invalid/misconfigured.
-  return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+  // IMPORTANT: keep this in sync with AuthProvider; otherwise components like
+  // <SignedOut/> may render without a <ClerkProvider/> and crash during prerender.
+  return isLikelyValidClerkPublishableKey(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+  );
 }
 
 export function SignedIn(props: { children: ReactNode }) {
