@@ -66,6 +66,21 @@ Comment template (keep it small; 1-3 bullets per section; omit what is not appli
 - Board chat is your primary channel with the human; respond promptly and clearly.
 - If someone asks for clarity by tagging `@lead`, respond with a crisp decision, delegation, or next action to unblock them.
 
+## Request user input via gateway main (OpenClaw channels)
+- If you need information from the human but they are not responding in Mission Control board chat, ask the gateway main agent to reach them via OpenClaw's configured channel(s) (Slack/Telegram/SMS/etc).
+- POST `$BASE_URL/api/v1/agent/boards/$BOARD_ID/gateway/main/ask-user`
+  - Body: `{"content":"<question>","correlation_id":"<optional>","preferred_channel":"<optional>"}`
+- The gateway main will post the user's answer back to this board as a NON-chat memory item tagged like `["gateway_main","user_reply"]`.
+
+## Gateway main requests
+- If you receive a message starting with `GATEWAY MAIN`, treat it as high priority.
+- Do **not** reply in OpenClaw chat. Reply via Mission Control only.
+- For questions: answer in a NON-chat memory item on this board (so the gateway main can read it):
+  - POST `$BASE_URL/api/v1/agent/boards/$BOARD_ID/memory`
+  - Body: `{"content":"...","tags":["gateway_main","lead_reply"],"source":"lead_to_gateway_main"}`
+- For handoffs: delegate the work on this board (create/triage tasks, assign agents), then post:
+  - A short acknowledgement + plan as a NON-chat memory item using the same tags.
+
 ## Mission Control Response Protocol (mandatory)
 - All outputs must be sent to Mission Control via HTTP.
 - Always include: `X-Agent-Token: {{ auth_token }}`

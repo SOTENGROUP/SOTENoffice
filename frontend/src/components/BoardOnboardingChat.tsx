@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RefreshCcw } from "lucide-react";
 
 import {
   DialogFooter,
@@ -120,16 +121,40 @@ export function BoardOnboardingChat({
   const isPageActive = usePageActive();
   const [session, setSession] = useState<BoardOnboardingRead | null>(null);
   const [loading, setLoading] = useState(false);
+  const [awaitingAssistantFingerprint, setAwaitingAssistantFingerprint] =
+    useState<string | null>(null);
+  const [awaitingKind, setAwaitingKind] = useState<
+    "answer" | "extra_context" | null
+  >(null);
+  const [lastSubmittedAnswer, setLastSubmittedAnswer] = useState<string | null>(
+    null,
+  );
   const [otherText, setOtherText] = useState("");
   const [extraContext, setExtraContext] = useState("");
   const [extraContextOpen, setExtraContextOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
+  const freeTextRef = useRef<HTMLTextAreaElement | null>(null);
+  const extraContextRef = useRef<HTMLTextAreaElement | null>(null);
 
   const normalizedMessages = useMemo(
     () => normalizeMessages(session?.messages),
     [session?.messages],
   );
+  const lastAssistantFingerprint = useMemo(() => {
+    const rawMessages = session?.messages;
+    if (!rawMessages || !Array.isArray(rawMessages)) return "";
+    for (let idx = rawMessages.length - 1; idx >= 0; idx -= 1) {
+      const entry = rawMessages[idx];
+      if (!entry || typeof entry !== "object") continue;
+      const raw = entry as Record<string, unknown>;
+      if (raw.role !== "assistant") continue;
+      const content = typeof raw.content === "string" ? raw.content : "";
+      const timestamp = typeof raw.timestamp === "string" ? raw.timestamp : "";
+      return `${timestamp}|${content}`;
+    }
+    return "";
+  }, [session?.messages]);
   const question = useMemo(
     () => parseQuestion(normalizedMessages),
     [normalizedMessages],
@@ -137,10 +162,25 @@ export function BoardOnboardingChat({
   const draft: BoardOnboardingAgentComplete | null =
     session?.draft_goal ?? null;
 
+  const isAwaitingAgent = useMemo(() => {
+    if (!awaitingAssistantFingerprint) return false;
+    return lastAssistantFingerprint === awaitingAssistantFingerprint;
+  }, [awaitingAssistantFingerprint, lastAssistantFingerprint]);
+
   const wantsFreeText = useMemo(
     () => selectedOptions.some((label) => isFreeTextOption(label)),
     [selectedOptions],
   );
+
+  useEffect(() => {
+    if (!wantsFreeText) return;
+    freeTextRef.current?.focus();
+  }, [wantsFreeText]);
+
+  useEffect(() => {
+    if (!extraContextOpen) return;
+    extraContextRef.current?.focus();
+  }, [extraContextOpen]);
 
   useEffect(() => {
     setSelectedOptions([]);
@@ -194,8 +234,12 @@ export function BoardOnboardingChat({
 
   const handleAnswer = useCallback(
     async (value: string, freeText?: string) => {
+      const fingerprintBefore = lastAssistantFingerprint;
       setLoading(true);
       setError(null);
+      setAwaitingAssistantFingerprint(null);
+      setAwaitingKind(null);
+      setLastSubmittedAnswer(null);
       try {
         const result =
           await answerOnboardingApiV1BoardsBoardIdOnboardingAnswerPost(
@@ -208,6 +252,12 @@ export function BoardOnboardingChat({
         if (result.status !== 200) throw new Error("Unable to submit answer.");
         setSession(result.data);
         setOtherText("");
+        setSelectedOptions([]);
+        setAwaitingAssistantFingerprint(fingerprintBefore);
+        setAwaitingKind("answer");
+        setLastSubmittedAnswer(
+          freeText ? `${value}: ${freeText}` : value,
+        );
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Failed to submit answer.",
@@ -216,7 +266,7 @@ export function BoardOnboardingChat({
         setLoading(false);
       }
     },
-    [boardId],
+    [boardId, lastAssistantFingerprint],
   );
 
   const toggleOption = useCallback((label: string) => {
@@ -230,8 +280,12 @@ export function BoardOnboardingChat({
   const submitExtraContext = useCallback(async () => {
     const trimmed = extraContext.trim();
     if (!trimmed) return;
+    const fingerprintBefore = lastAssistantFingerprint;
     setLoading(true);
     setError(null);
+    setAwaitingAssistantFingerprint(null);
+    setAwaitingKind(null);
+    setLastSubmittedAnswer(null);
     try {
       const result =
         await answerOnboardingApiV1BoardsBoardIdOnboardingAnswerPost(boardId, {
@@ -242,6 +296,10 @@ export function BoardOnboardingChat({
         throw new Error("Unable to submit extra context.");
       setSession(result.data);
       setExtraContext("");
+      setExtraContextOpen(false);
+      setAwaitingAssistantFingerprint(fingerprintBefore);
+      setAwaitingKind("extra_context");
+      setLastSubmittedAnswer("Additional context");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to submit extra context.",
@@ -249,7 +307,7 @@ export function BoardOnboardingChat({
     } finally {
       setLoading(false);
     }
-  }, [boardId, extraContext]);
+  }, [boardId, extraContext, lastAssistantFingerprint]);
 
   const submitAnswer = useCallback(() => {
     const trimmedOther = otherText.trim();
@@ -258,6 +316,15 @@ export function BoardOnboardingChat({
     const answer = selectedOptions.join(", ");
     void handleAnswer(answer, wantsFreeText ? trimmedOther : undefined);
   }, [handleAnswer, otherText, selectedOptions, wantsFreeText]);
+
+  useEffect(() => {
+    if (!awaitingAssistantFingerprint) return;
+    if (lastAssistantFingerprint !== awaitingAssistantFingerprint) {
+      setAwaitingAssistantFingerprint(null);
+      setAwaitingKind(null);
+      setLastSubmittedAnswer(null);
+    }
+  }, [awaitingAssistantFingerprint, lastAssistantFingerprint]);
 
   const confirmGoal = async () => {
     if (!draft) return;
@@ -303,6 +370,29 @@ export function BoardOnboardingChat({
           <p className="text-sm text-slate-600">
             Review the lead agent draft and confirm.
           </p>
+          {isAwaitingAgent ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <div className="flex items-center gap-2 font-medium text-slate-900">
+                <RefreshCcw className="h-4 w-4 animate-spin text-slate-500" />
+                <span>
+                  {awaitingKind === "extra_context"
+                    ? "Updating the draft…"
+                    : "Waiting for the agent…"}
+                </span>
+              </div>
+              {lastSubmittedAnswer ? (
+                <p className="mt-2 text-xs text-slate-600">
+                  Sent:{" "}
+                  <span className="font-medium text-slate-900">
+                    {lastSubmittedAnswer}
+                  </span>
+                </p>
+              ) : null}
+              <p className="mt-1 text-xs text-slate-500">
+                This usually takes a few seconds.
+              </p>
+            </div>
+          ) : null}
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
             <p className="font-semibold text-slate-900">Objective</p>
             <p className="text-slate-700">{draft.objective || "—"}</p>
@@ -402,25 +492,28 @@ export function BoardOnboardingChat({
                 size="sm"
                 type="button"
                 onClick={() => setExtraContextOpen((prev) => !prev)}
-                disabled={loading}
+                disabled={loading || isAwaitingAgent}
               >
                 {extraContextOpen ? "Hide" : "Add"}
               </Button>
             </div>
-            {extraContextOpen ? (
-              <div className="mt-2 space-y-2">
-                <Textarea
-                  className="min-h-[84px]"
-                  placeholder="Anything else the agent should know before you confirm? (constraints, context, preferences, links, etc.)"
-                  value={extraContext}
-                  onChange={(event) => setExtraContext(event.target.value)}
+	            {extraContextOpen ? (
+	              <div className="mt-2 space-y-2">
+	                <Textarea
+	                  ref={extraContextRef}
+	                  className="min-h-[84px]"
+	                  placeholder="Anything else the agent should know before you confirm? (constraints, context, preferences, links, etc.)"
+	                  value={extraContext}
+	                  onChange={(event) => setExtraContext(event.target.value)}
                   onKeyDown={(event) => {
-                    if (!(event.ctrlKey || event.metaKey)) return;
                     if (event.key !== "Enter") return;
+                    if (event.nativeEvent.isComposing) return;
+                    if (event.shiftKey) return;
                     event.preventDefault();
-                    if (loading) return;
+                    if (loading || isAwaitingAgent) return;
                     void submitExtraContext();
                   }}
+                  disabled={loading || isAwaitingAgent}
                 />
                 <div className="flex items-center justify-end">
                   <Button
@@ -428,13 +521,13 @@ export function BoardOnboardingChat({
                     size="sm"
                     type="button"
                     onClick={() => void submitExtraContext()}
-                    disabled={loading || !extraContext.trim()}
+                    disabled={loading || isAwaitingAgent || !extraContext.trim()}
                   >
-                    {loading ? "Sending..." : "Send context"}
+                    {loading ? "Sending..." : isAwaitingAgent ? "Waiting..." : "Send context"}
                   </Button>
                 </div>
                 <p className="text-xs text-slate-500">
-                  Tip: press Ctrl+Enter (or Cmd+Enter) to send.
+                  Tip: press Enter to send. Shift+Enter for a newline.
                 </p>
               </div>
             ) : (
@@ -445,7 +538,7 @@ export function BoardOnboardingChat({
             )}
           </div>
           <DialogFooter>
-            <Button onClick={confirmGoal} disabled={loading}>
+            <Button onClick={confirmGoal} disabled={loading || isAwaitingAgent} type="button">
               Confirm goal
             </Button>
           </DialogFooter>
@@ -455,6 +548,29 @@ export function BoardOnboardingChat({
           <p className="text-sm font-medium text-slate-900">
             {question.question}
           </p>
+          {isAwaitingAgent ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <div className="flex items-center gap-2 font-medium text-slate-900">
+                <RefreshCcw className="h-4 w-4 animate-spin text-slate-500" />
+                <span>
+                  {awaitingKind === "extra_context"
+                    ? "Updating the draft…"
+                    : "Waiting for the next question…"}
+                </span>
+              </div>
+              {lastSubmittedAnswer ? (
+                <p className="mt-2 text-xs text-slate-600">
+                  Sent:{" "}
+                  <span className="font-medium text-slate-900">
+                    {lastSubmittedAnswer}
+                  </span>
+                </p>
+              ) : null}
+              <p className="mt-1 text-xs text-slate-500">
+                This usually takes a few seconds.
+              </p>
+            </div>
+          ) : null}
           <div className="space-y-2">
             {question.options.map((option) => {
               const isSelected = selectedOptions.includes(option.label);
@@ -464,7 +580,8 @@ export function BoardOnboardingChat({
                   variant={isSelected ? "primary" : "secondary"}
                   className="w-full justify-start"
                   onClick={() => toggleOption(option.label)}
-                  disabled={loading}
+                  disabled={loading || isAwaitingAgent}
+                  type="button"
                 >
                   {option.label}
                 </Button>
@@ -474,20 +591,23 @@ export function BoardOnboardingChat({
           {wantsFreeText ? (
             <div className="space-y-2">
               <Textarea
+                ref={freeTextRef}
                 className="min-h-[84px]"
                 placeholder="Type your answer..."
                 value={otherText}
                 onChange={(event) => setOtherText(event.target.value)}
                 onKeyDown={(event) => {
-                  if (!(event.ctrlKey || event.metaKey)) return;
                   if (event.key !== "Enter") return;
+                  if (event.nativeEvent.isComposing) return;
+                  if (event.shiftKey) return;
                   event.preventDefault();
-                  if (loading) return;
+                  if (loading || isAwaitingAgent) return;
                   submitAnswer();
                 }}
+                disabled={loading || isAwaitingAgent}
               />
               <p className="text-xs text-slate-500">
-                Tip: press Ctrl+Enter (or Cmd+Enter) to send.
+                Tip: press Enter to send. Shift+Enter for a newline.
               </p>
             </div>
           ) : null}
@@ -495,16 +615,22 @@ export function BoardOnboardingChat({
             <Button
               variant="outline"
               onClick={submitAnswer}
+              type="button"
               disabled={
                 loading ||
+                isAwaitingAgent ||
                 selectedOptions.length === 0 ||
                 (wantsFreeText && !otherText.trim())
               }
             >
-              {loading ? "Sending..." : "Next"}
+              {loading ? "Sending..." : isAwaitingAgent ? "Waiting..." : "Next"}
             </Button>
             {loading ? (
               <p className="text-xs text-slate-500">Sending your answer…</p>
+            ) : isAwaitingAgent ? (
+              <p className="text-xs text-slate-500">
+                Waiting for the agent to respond…
+              </p>
             ) : null}
           </div>
         </div>

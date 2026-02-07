@@ -19,6 +19,7 @@ If any required input is missing, stop and request a provisioning update.
 ## Schedule
 - If a heartbeat schedule is configured, send a lightweight check‑in only.
 - Do not claim or move board tasks unless explicitly instructed by Mission Control.
+- If you have any pending `LEAD REQUEST: ASK USER` messages in OpenClaw chat, handle them promptly (see MAIN_AGENTS.md).
 
 ## Heartbeat checklist
 1) Check in:

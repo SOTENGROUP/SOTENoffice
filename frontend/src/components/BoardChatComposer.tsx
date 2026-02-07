@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,12 +17,22 @@ function BoardChatComposerImpl({
   onSend,
 }: BoardChatComposerProps) {
   const [value, setValue] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const shouldFocusAfterSendRef = useRef(false);
+
+  useEffect(() => {
+    if (isSending) return;
+    if (!shouldFocusAfterSendRef.current) return;
+    shouldFocusAfterSendRef.current = false;
+    textareaRef.current?.focus();
+  }, [isSending]);
 
   const send = useCallback(async () => {
     if (isSending) return;
     const trimmed = value.trim();
     if (!trimmed) return;
     const ok = await onSend(trimmed);
+    shouldFocusAfterSendRef.current = true;
     if (ok) {
       setValue("");
     }
@@ -31,6 +41,7 @@ function BoardChatComposerImpl({
   return (
     <div className="mt-4 space-y-2">
       <Textarea
+        ref={textareaRef}
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {

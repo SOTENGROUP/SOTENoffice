@@ -68,24 +68,19 @@ frontend-typecheck: ## Typecheck frontend (tsc)
 	cd $(FRONTEND_DIR) && npx tsc -p tsconfig.json --noEmit
 
 .PHONY: test
-test: backend-test ## Run tests
-
-.PHONY: coverage
-coverage: backend-coverage ## Run tests with coverage + enforce thresholds
+test: backend-test frontend-test ## Run tests
 
 .PHONY: backend-test
 backend-test: ## Backend tests (pytest)
 	cd $(BACKEND_DIR) && uv run pytest
 
 .PHONY: backend-coverage
-backend-coverage: ## Backend tests with coverage (fail under 100% statements+branches on covered src)
-	cd $(BACKEND_DIR) && uv run pytest \
-		--cov=app \
-		--cov-config=.coveragerc \
-		--cov-report=term-missing \
-		--cov-report=xml:coverage.xml \
-		--cov-branch \
-		--cov-fail-under=10
+backend-coverage: ## Backend tests with coverage gate (100% stmt + branch on covered src)
+	cd $(BACKEND_DIR) && uv run pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml
+
+.PHONY: frontend-test
+frontend-test: ## Frontend tests (vitest)
+	cd $(FRONTEND_DIR) && npm run test
 
 .PHONY: backend-migrate
 backend-migrate: ## Apply backend DB migrations (alembic upgrade head)
@@ -108,4 +103,4 @@ backend-templates-sync: ## Sync templates to existing gateway agents (usage: mak
 	cd $(BACKEND_DIR) && uv run python scripts/sync_gateway_templates.py --gateway-id "$(GATEWAY_ID)" $(SYNC_ARGS)
 
 .PHONY: check
-check: lint typecheck coverage build ## Run lint + typecheck + tests(with coverage gate) + build
+check: lint typecheck backend-coverage frontend-test build ## Run lint + typecheck + tests + coverage + build

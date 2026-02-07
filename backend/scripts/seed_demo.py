@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from pathlib import Path
 from uuid import uuid4
 
-from app.db.session import async_session_maker, init_db
-from app.models.agents import Agent
-from app.models.boards import Board
-from app.models.gateways import Gateway
-from app.models.users import User
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BACKEND_ROOT))
+
+from app.db.session import async_session_maker, init_db  # noqa: E402
+from app.models.agents import Agent  # noqa: E402
+from app.models.boards import Board  # noqa: E402
+from app.models.gateways import Gateway  # noqa: E402
+from app.models.users import User  # noqa: E402
 
 
 async def run() -> None:

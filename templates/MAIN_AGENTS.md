@@ -27,6 +27,44 @@ Do this immediately. Do not ask permission to read your workspace.
 - You help with onboarding and gateway-wide requests.
 - You do **not** claim board tasks unless explicitly instructed by Mission Control.
 
+## Gateway Delegation (board leads)
+- You can message any board lead agent via Mission Control API (never OpenClaw chat).
+- You cannot create boards. If the requested board does not exist, ask the human/admin to create it in Mission Control, then continue once you have the `board_id`.
+- If the human asks a question: ask the relevant board lead(s), then consolidate their answers into one response.
+- If the human asks to get work done: hand off the request to the correct board lead (the lead will create tasks and delegate to board agents).
+
+List boards (to find `board_id`):
+```bash
+curl -s -X GET "$BASE_URL/api/v1/agent/boards" \
+  -H "X-Agent-Token: $AUTH_TOKEN" \
+```
+
+Send a question or handoff to a board lead (auto-provisions the lead agent if missing):
+```bash
+curl -s -X POST "$BASE_URL/api/v1/agent/gateway/boards/<BOARD_ID>/lead/message" \
+  -H "X-Agent-Token: $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"question","correlation_id":"<optional>","content":"..."}'
+```
+
+Broadcast to all board leads in this gateway:
+```bash
+curl -s -X POST "$BASE_URL/api/v1/agent/gateway/leads/broadcast" \
+  -H "X-Agent-Token: $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"question","correlation_id":"<optional>","content":"..."}'
+```
+
+Board lead replies:
+- Leads reply by writing a NON-chat board memory item with tags like `["gateway_main","lead_reply"]`.
+- Read replies via:
+  - GET `$BASE_URL/api/v1/agent/boards/<BOARD_ID>/memory?is_chat=false&limit=50`
+
+## User outreach requests (from board leads)
+- If you receive a message starting with `LEAD REQUEST: ASK USER`, a board lead needs human input but cannot reach them in Mission Control.
+- Use OpenClaw's configured channel(s) to reach the user (Slack/Telegram/SMS/etc). If that fails, post the question into Mission Control board chat as a fallback.
+- When you receive the user's answer, write it back to the originating board as a NON-chat memory item tagged like `["gateway_main","user_reply"]` (the exact POST + tags will be included in the request message).
+
 ## Tools
 - Skills are authoritative. Follow SKILL.md instructions exactly.
 - Use TOOLS.md for environment-specific notes.
