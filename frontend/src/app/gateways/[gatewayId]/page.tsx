@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-import { SignInButton, SignedIn, SignedOut, useAuth } from "@/auth/clerk";
+import { SignedIn, SignedOut, useAuth } from "@/auth/clerk";
 
 import { ApiError } from "@/api/mutator";
 import {
@@ -22,6 +22,8 @@ import {
   type getMyMembershipApiV1OrganizationsMeMemberGetResponse,
   useGetMyMembershipApiV1OrganizationsMeMemberGet,
 } from "@/api/generated/organizations/organizations";
+import { AdminOnlyNotice } from "@/components/auth/AdminOnlyNotice";
+import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { Button } from "@/components/ui/button";
@@ -128,17 +130,10 @@ export default function GatewayDetailPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <div className="col-span-2 flex min-h-[calc(100vh-64px)] items-center justify-center bg-slate-50 p-10 text-center">
-          <div className="rounded-xl border border-slate-200 bg-white px-8 py-6 shadow-sm">
-            <p className="text-sm text-slate-600">Sign in to view a gateway.</p>
-            <SignInButton
-              mode="modal"
-              forceRedirectUrl={`/gateways/${gatewayId}`}
-            >
-              <Button className="mt-4">Sign in</Button>
-            </SignInButton>
-          </div>
-        </div>
+        <SignedOutPanel
+          message="Sign in to view a gateway."
+          forceRedirectUrl={`/gateways/${gatewayId}`}
+        />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />
@@ -173,9 +168,7 @@ export default function GatewayDetailPage() {
 
           <div className="p-8">
             {!isAdmin ? (
-              <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 text-sm text-slate-600 shadow-sm">
-                Only organization owners and admins can access gateways.
-              </div>
+              <AdminOnlyNotice message="Only organization owners and admins can access gateways." />
             ) : gatewayQuery.isLoading ? (
               <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
                 Loading gateway…
