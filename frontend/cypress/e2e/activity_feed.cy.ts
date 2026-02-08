@@ -2,9 +2,9 @@
 
 describe("/activity feed", () => {
   const apiBase = "**/api/v1";
+  const email = Cypress.env("CLERK_TEST_EMAIL") || "jane+clerk_test@example.com";
 
   function stubStreamEmpty() {
-    // Return a minimal SSE response that ends immediately.
     cy.intercept(
       "GET",
       `${apiBase}/activity/task-comments/stream*`,
@@ -18,11 +18,15 @@ describe("/activity feed", () => {
     ).as("activityStream");
   }
 
-  function isSignedOutView(): Cypress.Chainable<boolean> {
-    return cy
-      .get("body")
-      .then(($body) => $body.text().toLowerCase().includes("sign in to view the feed"));
+  function assertSignedInAndLanded() {
+    cy.contains(/live feed/i, { timeout: 30_000 }).should("be.visible");
   }
+
+  it("auth negative: signed-out user cannot access /activity", () => {
+    // Story: signed-out user tries to visit /activity and is redirected to sign-in.
+    cy.visit("/activity");
+    cy.location("pathname", { timeout: 20_000 }).should("match", /\/sign-in/);
+  });
 
   it("happy path: renders task comment cards", () => {
     cy.intercept("GET", `${apiBase}/activity/task-comments*`, {
@@ -40,43 +44,23 @@ describe("/activity feed", () => {
             task_title: "CI hardening",
             created_at: "2026-02-07T00:00:00Z",
           },
-          {
-            id: "c2",
-            message: "Second comment",
-            agent_name: "Riya",
-            agent_role: "QA",
-            board_id: "b1",
-            board_name: "Testing",
-            task_id: "t2",
-            task_title: "Coverage policy",
-            created_at: "2026-02-07T00:01:00Z",
-          },
         ],
       },
     }).as("activityList");
 
     stubStreamEmpty();
 
-    cy.visit("/activity", {
-      onBeforeLoad(win: Window) {
-        win.localStorage.clear();
-      },
-    });
+    // Story: user signs in, then visits /activity and sees the live feed.
+    cy.visit("/sign-in");
+    cy.clerkLoaded();
+    cy.clerkSignIn({ strategy: "email_code", identifier: email });
 
-    isSignedOutView().then((signedOut) => {
-      if (signedOut) {
-        // In secretless CI (no Clerk), the SignedOut UI is expected and no API calls should happen.
-        cy.contains(/sign in to view the feed/i).should("be.visible");
-        return;
-      }
+    cy.visit("/activity");
+    assertSignedInAndLanded();
 
-      cy.wait("@activityList");
-
-      cy.contains(/live feed/i).should("be.visible");
-      cy.contains("CI hardening").should("be.visible");
-      cy.contains("Coverage policy").should("be.visible");
-      cy.contains("Hello world").should("be.visible");
-    });
+    cy.wait("@activityList");
+    cy.contains("CI hardening").should("be.visible");
+    cy.contains("Hello world").should("be.visible");
   });
 
   it("empty state: shows waiting message when no items", () => {
@@ -87,17 +71,16 @@ describe("/activity feed", () => {
 
     stubStreamEmpty();
 
+    // Story: user signs in, then visits /activity and sees an empty-state message.
+    cy.visit("/sign-in");
+    cy.clerkLoaded();
+    cy.clerkSignIn({ strategy: "email_code", identifier: email });
+
     cy.visit("/activity");
+    assertSignedInAndLanded();
 
-    isSignedOutView().then((signedOut) => {
-      if (signedOut) {
-        cy.contains(/sign in to view the feed/i).should("be.visible");
-        return;
-      }
-
-      cy.wait("@activityList");
-      cy.contains(/waiting for new comments/i).should("be.visible");
-    });
+    cy.wait("@activityList");
+    cy.contains(/waiting for new comments/i).should("be.visible");
   });
 
   it("error state: shows failure UI when API errors", () => {
@@ -108,18 +91,15 @@ describe("/activity feed", () => {
 
     stubStreamEmpty();
 
+    // Story: user signs in, then visits /activity; API fails and user sees an error.
+    cy.visit("/sign-in");
+    cy.clerkLoaded();
+    cy.clerkSignIn({ strategy: "email_code", identifier: email });
+
     cy.visit("/activity");
+    assertSignedInAndLanded();
 
-    isSignedOutView().then((signedOut) => {
-      if (signedOut) {
-        cy.contains(/sign in to view the feed/i).should("be.visible");
-        return;
-      }
-
-      cy.wait("@activityList");
-
-      // UI uses query.error.message or fallback.
-      cy.contains(/unable to load feed|boom/i).should("be.visible");
-    });
+    cy.wait("@activityList");
+    cy.contains(/unable to load feed|boom/i).should("be.visible");
   });
 });

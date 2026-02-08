@@ -1,7 +1,6 @@
 describe("/activity page", () => {
-  it("loads without crashing", () => {
+  it("signed-out user is redirected to sign-in", () => {
     cy.visit("/activity");
-    // In secretless/unsigned state, UI should render the signed-out prompt.
-    cy.contains(/sign in to view the feed/i).should("be.visible");
+    cy.location("pathname", { timeout: 20_000 }).should("match", /\/sign-in/);
   });
 });
