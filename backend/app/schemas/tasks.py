@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TCH003
+from datetime import datetime
 from typing import Literal, Self
-from uuid import UUID  # noqa: TCH003
+from uuid import UUID
 
 from pydantic import field_validator, model_validator
 from sqlmodel import Field, SQLModel
 
-from app.schemas.common import NonEmptyStr  # noqa: TCH001
+from app.schemas.common import NonEmptyStr
 
 TaskStatus = Literal["inbox", "in_progress", "review", "done"]
 STATUS_REQUIRED_ERROR = "status is required"
+# Keep these symbols as runtime globals so Pydantic can resolve
+# deferred annotations reliably.
+RUNTIME_ANNOTATION_TYPES = (datetime, UUID, NonEmptyStr)
 
 
 class TaskBase(SQLModel):

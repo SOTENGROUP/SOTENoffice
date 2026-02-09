@@ -1,4 +1,3 @@
-# ruff: noqa: INP001
 """CLI script to sync template files into gateway agent workspaces."""
 
 from __future__ import annotations
@@ -11,10 +10,6 @@ from uuid import UUID
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
-
-from app.db.session import async_session_maker  # noqa: E402
-from app.models.gateways import Gateway  # noqa: E402
-from app.services.template_sync import sync_gateway_templates  # noqa: E402
 
 
 def _parse_args() -> argparse.Namespace:
@@ -59,6 +54,13 @@ def _parse_args() -> argparse.Namespace:
 
 
 async def _run() -> int:
+    from app.db.session import async_session_maker
+    from app.models.gateways import Gateway
+    from app.services.template_sync import (
+        GatewayTemplateSyncOptions,
+        sync_gateway_templates,
+    )
+
     args = _parse_args()
     gateway_id = UUID(args.gateway_id)
     board_id = UUID(args.board_id) if args.board_id else None
@@ -72,12 +74,14 @@ async def _run() -> int:
         result = await sync_gateway_templates(
             session,
             gateway,
-            user=None,
-            include_main=bool(args.include_main),
-            reset_sessions=bool(args.reset_sessions),
-            rotate_tokens=bool(args.rotate_tokens),
-            force_bootstrap=bool(args.force_bootstrap),
-            board_id=board_id,
+            options=GatewayTemplateSyncOptions(
+                user=None,
+                include_main=bool(args.include_main),
+                reset_sessions=bool(args.reset_sessions),
+                rotate_tokens=bool(args.rotate_tokens),
+                force_bootstrap=bool(args.force_bootstrap),
+                board_id=board_id,
+            ),
         )
 
     sys.stdout.write(f"gateway_id={result.gateway_id}\n")

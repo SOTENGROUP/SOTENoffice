@@ -34,6 +34,8 @@ from app.schemas.gateways import (
 from app.schemas.pagination import DefaultLimitOffsetPage
 from app.services.agent_provisioning import (
     DEFAULT_HEARTBEAT_CONFIG,
+    MainAgentProvisionRequest,
+    ProvisionOptions,
     provision_main_agent,
 )
 from app.services.template_sync import (
@@ -187,7 +189,15 @@ async def _ensure_main_agent(
     await session.commit()
     await session.refresh(agent)
     try:
-        await provision_main_agent(agent, gateway, raw_token, auth.user, action=action)
+        await provision_main_agent(
+            agent,
+            MainAgentProvisionRequest(
+                gateway=gateway,
+                auth_token=raw_token,
+                user=auth.user,
+                options=ProvisionOptions(action=action),
+            ),
+        )
         await ensure_session(
             gateway.main_session_key,
             config=GatewayClientConfig(url=gateway.url, token=gateway.token),

@@ -63,7 +63,11 @@ from app.schemas.tasks import (
     TaskUpdate,
 )
 from app.services.activity_log import record_activity
-from app.services.board_leads import ensure_board_lead_agent
+from app.services.board_leads import (
+    LeadAgentOptions,
+    LeadAgentRequest,
+    ensure_board_lead_agent,
+)
 from app.services.task_dependencies import (
     blocked_by_dependency_ids,
     dependency_status_by_id,
@@ -111,6 +115,29 @@ class SoulUpdateRequest(SQLModel):
     content: str
     source_url: str | None = None
     reason: str | None = None
+
+
+class AgentTaskListFilters(SQLModel):
+    """Query filters for board task listing in agent routes."""
+
+    status_filter: str | None = None
+    assigned_agent_id: UUID | None = None
+    unassigned: bool | None = None
+
+
+def _task_list_filters(
+    status_filter: str | None = TASK_STATUS_QUERY,
+    assigned_agent_id: UUID | None = None,
+    unassigned: bool | None = None,
+) -> AgentTaskListFilters:
+    return AgentTaskListFilters(
+        status_filter=status_filter,
+        assigned_agent_id=assigned_agent_id,
+        unassigned=unassigned,
+    )
+
+
+TASK_LIST_FILTERS_DEP = Depends(_task_list_filters)
 
 
 def _actor(agent_ctx: AgentAuthContext) -> ActorContext:
@@ -217,19 +244,16 @@ async def list_agents(
         statement = statement.where(Agent.board_id == agent_ctx.agent.board_id)
     elif board_id:
         statement = statement.where(Agent.board_id == board_id)
-    get_gateway_main_session_keys = (
-        agents_api._get_gateway_main_session_keys  # noqa: SLF001
-    )
-    to_agent_read = agents_api._to_agent_read  # noqa: SLF001
-    with_computed_status = agents_api._with_computed_status  # noqa: SLF001
-
-    main_session_keys = await get_gateway_main_session_keys(session)
+    main_session_keys = await agents_api.get_gateway_main_session_keys(session)
     statement = statement.order_by(col(Agent.created_at).desc())
 
     def _transform(items: Sequence[Any]) -> Sequence[Any]:
         agents = cast(Sequence[Agent], items)
         return [
-            to_agent_read(with_computed_status(agent), main_session_keys)
+            agents_api.to_agent_read(
+                agents_api.with_computed_status(agent),
+                main_session_keys,
+            )
             for agent in agents
         ]
 
@@ -237,10 +261,8 @@ async def list_agents(
 
 
 @router.get("/boards/{board_id}/tasks", response_model=DefaultLimitOffsetPage[TaskRead])
-async def list_tasks(  # noqa: PLR0913
-    status_filter: str | None = TASK_STATUS_QUERY,
-    assigned_agent_id: UUID | None = None,
-    unassigned: bool | None = None,
+async def list_tasks(
+    filters: AgentTaskListFilters = TASK_LIST_FILTERS_DEP,
     board: Board = BOARD_DEP,
     session: AsyncSession = SESSION_DEP,
     agent_ctx: AgentAuthContext = AGENT_CTX_DEP,
@@ -248,9 +270,9 @@ async def list_tasks(  # noqa: PLR0913
     """List tasks on a board with optional status and assignment filters."""
     _guard_board_access(agent_ctx, board)
     return await tasks_api.list_tasks(
-        status_filter=status_filter,
-        assigned_agent_id=assigned_agent_id,
-        unassigned=unassigned,
+        status_filter=filters.status_filter,
+        assigned_agent_id=filters.assigned_agent_id,
+        unassigned=filters.unassigned,
         board=board,
         session=session,
         actor=_actor(agent_ctx),
@@ -336,10 +358,7 @@ async def create_task(
             session,
         )
         if assigned_agent:
-            notify_agent_on_task_assign = (
-                tasks_api._notify_agent_on_task_assign  # noqa: SLF001
-            )
-            await notify_agent_on_task_assign(
+            await tasks_api.notify_agent_on_task_assign(
                 session=session,
                 board=board,
                 task=task,
@@ -821,11 +840,13 @@ async def message_gateway_board_lead(
     board = await _require_gateway_board(session, gateway=gateway, board_id=board_id)
     lead, lead_created = await ensure_board_lead_agent(
         session,
-        board=board,
-        gateway=gateway,
-        config=config,
-        user=None,
-        action="provision",
+        request=LeadAgentRequest(
+            board=board,
+            gateway=gateway,
+            config=config,
+            user=None,
+            options=LeadAgentOptions(action="provision"),
+        ),
     )
     if not lead.openclaw_session_id:
         raise HTTPException(
@@ -932,11 +953,13 @@ async def broadcast_gateway_lead_message(
         try:
             lead, _lead_created = await ensure_board_lead_agent(
                 session,
-                board=board,
-                gateway=gateway,
-                config=config,
-                user=None,
-                action="provision",
+                request=LeadAgentRequest(
+                    board=board,
+                    gateway=gateway,
+                    config=config,
+                    user=None,
+                    options=LeadAgentOptions(action="provision"),
+                ),
             )
             lead_session_key = _require_lead_session_key(lead)
             message = (

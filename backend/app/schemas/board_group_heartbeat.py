@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID  # noqa: TCH003
+from uuid import UUID
 
 from sqlmodel import SQLModel
+
+RUNTIME_ANNOTATION_TYPES = (UUID,)
 
 
 class BoardGroupHeartbeatApply(SQLModel):

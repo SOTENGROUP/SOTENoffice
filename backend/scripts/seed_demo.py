@@ -10,15 +10,15 @@ from uuid import uuid4
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.db.session import async_session_maker, init_db  # noqa: E402
-from app.models.agents import Agent  # noqa: E402
-from app.models.boards import Board  # noqa: E402
-from app.models.gateways import Gateway  # noqa: E402
-from app.models.users import User  # noqa: E402
-
 
 async def run() -> None:
     """Populate the local database with a demo gateway, board, user, and agent."""
+    from app.db.session import async_session_maker, init_db
+    from app.models.agents import Agent
+    from app.models.boards import Board
+    from app.models.gateways import Gateway
+    from app.models.users import User
+
     await init_db()
     async with async_session_maker() as session:
         demo_workspace_root = BACKEND_ROOT / ".tmp" / "openclaw-demo"

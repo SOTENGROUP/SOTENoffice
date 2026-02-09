@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from sqlmodel import col, select
@@ -15,7 +16,12 @@ from app.integrations.openclaw_gateway import (
     send_message,
 )
 from app.models.agents import Agent
-from app.services.agent_provisioning import DEFAULT_HEARTBEAT_CONFIG, provision_agent
+from app.services.agent_provisioning import (
+    DEFAULT_HEARTBEAT_CONFIG,
+    AgentProvisionRequest,
+    ProvisionOptions,
+    provision_agent,
+)
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -35,18 +41,34 @@ def lead_agent_name(_: Board) -> str:
     return "Lead Agent"
 
 
-async def ensure_board_lead_agent(  # noqa: PLR0913
+@dataclass(frozen=True, slots=True)
+class LeadAgentOptions:
+    """Optional overrides for board-lead provisioning behavior."""
+
+    agent_name: str | None = None
+    identity_profile: dict[str, str] | None = None
+    action: str = "provision"
+
+
+@dataclass(frozen=True, slots=True)
+class LeadAgentRequest:
+    """Inputs required to ensure or provision a board lead agent."""
+
+    board: Board
+    gateway: Gateway
+    config: GatewayClientConfig
+    user: User | None
+    options: LeadAgentOptions = field(default_factory=LeadAgentOptions)
+
+
+async def ensure_board_lead_agent(
     session: AsyncSession,
     *,
-    board: Board,
-    gateway: Gateway,
-    config: GatewayClientConfig,
-    user: User | None,
-    agent_name: str | None = None,
-    identity_profile: dict[str, str] | None = None,
-    action: str = "provision",
+    request: LeadAgentRequest,
 ) -> tuple[Agent, bool]:
     """Ensure a board has a lead agent; return `(agent, created)`."""
+    board = request.board
+    config_options = request.options
     existing = (
         await session.exec(
             select(Agent)
@@ -55,7 +77,7 @@ async def ensure_board_lead_agent(  # noqa: PLR0913
         )
     ).first()
     if existing:
-        desired_name = agent_name or lead_agent_name(board)
+        desired_name = config_options.agent_name or lead_agent_name(board)
         changed = False
         if existing.name != desired_name:
             existing.name = desired_name
@@ -76,17 +98,17 @@ async def ensure_board_lead_agent(  # noqa: PLR0913
         "communication_style": "direct, concise, practical",
         "emoji": ":gear:",
     }
-    if identity_profile:
+    if config_options.identity_profile:
         merged_identity_profile.update(
             {
                 key: value.strip()
-                for key, value in identity_profile.items()
+                for key, value in config_options.identity_profile.items()
                 if value.strip()
             },
         )
 
     agent = Agent(
-        name=agent_name or lead_agent_name(board),
+        name=config_options.agent_name or lead_agent_name(board),
         status="provisioning",
         board_id=board.id,
         is_board_lead=True,
@@ -94,7 +116,7 @@ async def ensure_board_lead_agent(  # noqa: PLR0913
         identity_profile=merged_identity_profile,
         openclaw_session_id=lead_session_key(board),
         provision_requested_at=utcnow(),
-        provision_action=action,
+        provision_action=config_options.action,
     )
     raw_token = generate_agent_token()
     agent.agent_token_hash = hash_agent_token(raw_token)
@@ -103,11 +125,20 @@ async def ensure_board_lead_agent(  # noqa: PLR0913
     await session.refresh(agent)
 
     try:
-        await provision_agent(agent, board, gateway, raw_token, user, action=action)
+        await provision_agent(
+            agent,
+            AgentProvisionRequest(
+                board=board,
+                gateway=request.gateway,
+                auth_token=raw_token,
+                user=request.user,
+                options=ProvisionOptions(action=config_options.action),
+            ),
+        )
         if agent.openclaw_session_id:
             await ensure_session(
                 agent.openclaw_session_id,
-                config=config,
+                config=request.config,
                 label=agent.name,
             )
             await send_message(
@@ -118,7 +149,7 @@ async def ensure_board_lead_agent(  # noqa: PLR0913
                     "then delete it. Begin heartbeats after startup."
                 ),
                 session_key=agent.openclaw_session_id,
-                config=config,
+                config=request.config,
                 deliver=True,
             )
     except OpenClawGatewayError:

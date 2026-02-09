@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from typing import Literal
-from uuid import UUID  # noqa: TCH003
+from uuid import UUID
 
 from sqlmodel import Field, SQLModel
 
-from app.schemas.common import NonEmptyStr  # noqa: TCH001
+from app.schemas.common import NonEmptyStr
+
+RUNTIME_ANNOTATION_TYPES = (UUID, NonEmptyStr)
 
 
 def _lead_reply_tags() -> list[str]:

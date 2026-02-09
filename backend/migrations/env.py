@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -14,8 +15,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-from app import models  # noqa: E402,F401
-from app.core.config import settings  # noqa: E402
+importlib.import_module("app.models")
+settings = importlib.import_module("app.core.config").settings
 
 config = context.config
 configure_logger = config.attributes.get("configure_logger", True)

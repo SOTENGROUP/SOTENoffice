@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TCH003
+from datetime import datetime
 from typing import Literal
 
 from sqlmodel import SQLModel
+
+RUNTIME_ANNOTATION_TYPES = (datetime,)
 
 
 class DashboardSeriesPoint(SQLModel):

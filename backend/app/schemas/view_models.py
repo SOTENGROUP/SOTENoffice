@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TCH003
-from uuid import UUID  # noqa: TCH003
+from datetime import datetime
+from uuid import UUID
 
 from sqlmodel import Field, SQLModel
 
-from app.schemas.agents import AgentRead  # noqa: TCH001
-from app.schemas.approvals import ApprovalRead  # noqa: TCH001
-from app.schemas.board_groups import BoardGroupRead  # noqa: TCH001
-from app.schemas.board_memory import BoardMemoryRead  # noqa: TCH001
-from app.schemas.boards import BoardRead  # noqa: TCH001
+from app.schemas.agents import AgentRead
+from app.schemas.approvals import ApprovalRead
+from app.schemas.board_groups import BoardGroupRead
+from app.schemas.board_memory import BoardMemoryRead
+from app.schemas.boards import BoardRead
 from app.schemas.tasks import TaskRead
+
+RUNTIME_ANNOTATION_TYPES = (
+    datetime,
+    UUID,
+    AgentRead,
+    ApprovalRead,
+    BoardGroupRead,
+    BoardMemoryRead,
+    BoardRead,
+)
 
 
 class TaskCardRead(TaskRead):

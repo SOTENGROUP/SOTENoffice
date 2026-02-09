@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TCH003
+from datetime import datetime
 from typing import Literal, Self
-from uuid import UUID  # noqa: TCH003
+from uuid import UUID
 
 from pydantic import model_validator
 from sqlmodel import SQLModel
 
 ApprovalStatus = Literal["pending", "approved", "rejected"]
 STATUS_REQUIRED_ERROR = "status is required"
+RUNTIME_ANNOTATION_TYPES = (datetime, UUID)
 
 
 class ApprovalBase(SQLModel):

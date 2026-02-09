@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
@@ -19,7 +17,6 @@ from app.api.deps import (
     require_admin_auth,
     require_admin_or_agent,
 )
-from app.core.agent_tokens import generate_agent_token, hash_agent_token
 from app.core.config import settings
 from app.core.time import utcnow
 from app.db.session import get_session
@@ -29,7 +26,6 @@ from app.integrations.openclaw_gateway import (
     ensure_session,
     send_message,
 )
-from app.models.agents import Agent
 from app.models.board_onboarding import BoardOnboardingSession
 from app.models.gateways import Gateway
 from app.schemas.board_onboarding import (
@@ -43,7 +39,11 @@ from app.schemas.board_onboarding import (
     BoardOnboardingUserProfile,
 )
 from app.schemas.boards import BoardRead
-from app.services.agent_provisioning import DEFAULT_HEARTBEAT_CONFIG, provision_agent
+from app.services.board_leads import (
+    LeadAgentOptions,
+    LeadAgentRequest,
+    ensure_board_lead_agent,
+)
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -72,93 +72,85 @@ async def _gateway_config(
     return gateway, GatewayClientConfig(url=gateway.url, token=gateway.token)
 
 
-def _build_session_key(agent_name: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", agent_name.lower()).strip("-")
-    return f"agent:{slug or uuid4().hex}:main"
-
-
-def _lead_agent_name(_board: Board) -> str:
-    return "Lead Agent"
-
-
-def _lead_session_key(board: Board) -> str:
-    return f"agent:lead-{board.id}:main"
-
-
-async def _ensure_lead_agent(  # noqa: PLR0913
-    session: AsyncSession,
-    board: Board,
-    gateway: Gateway,
-    config: GatewayClientConfig,
-    auth: AuthContext,
-    *,
-    agent_name: str | None = None,
-    identity_profile: dict[str, str] | None = None,
-) -> Agent:
-    existing = (
-        await Agent.objects.filter_by(board_id=board.id)
-        .filter(col(Agent.is_board_lead).is_(True))
-        .first(session)
-    )
-    if existing:
-        desired_name = agent_name or _lead_agent_name(board)
-        if existing.name != desired_name:
-            existing.name = desired_name
-            session.add(existing)
-            await session.commit()
-            await session.refresh(existing)
-        return existing
-
-    merged_identity_profile = {
-        "role": "Board Lead",
-        "communication_style": "direct, concise, practical",
-        "emoji": ":gear:",
-    }
-    if identity_profile:
-        merged_identity_profile.update(
-            {
-                key: value.strip()
-                for key, value in identity_profile.items()
-                if value.strip()
-            },
-        )
-
-    agent = Agent(
-        name=agent_name or _lead_agent_name(board),
-        status="provisioning",
-        board_id=board.id,
-        is_board_lead=True,
-        heartbeat_config=DEFAULT_HEARTBEAT_CONFIG.copy(),
-        identity_profile=merged_identity_profile,
-    )
-    raw_token = generate_agent_token()
-    agent.agent_token_hash = hash_agent_token(raw_token)
-    agent.provision_requested_at = utcnow()
-    agent.provision_action = "provision"
-    agent.openclaw_session_id = _lead_session_key(board)
-    session.add(agent)
-    await session.commit()
-    await session.refresh(agent)
-
+def _parse_draft_user_profile(
+    draft_goal: object,
+) -> BoardOnboardingUserProfile | None:
+    if not isinstance(draft_goal, dict):
+        return None
+    raw_profile = draft_goal.get("user_profile")
+    if raw_profile is None:
+        return None
     try:
-        await provision_agent(
-            agent, board, gateway, raw_token, auth.user, action="provision",
-        )
-        await ensure_session(agent.openclaw_session_id, config=config, label=agent.name)
-        await send_message(
-            (
-                f"Hello {agent.name}. Your workspace has been provisioned.\n\n"
-                "Start the agent, run BOOT.md, and if BOOTSTRAP.md exists run it once "
-                "then delete it. Begin heartbeats after startup."
-            ),
-            session_key=agent.openclaw_session_id,
-            config=config,
-            deliver=True,
-        )
-    except OpenClawGatewayError:
-        # Best-effort provisioning. Board confirmation should still succeed.
-        pass
-    return agent
+        return BoardOnboardingUserProfile.model_validate(raw_profile)
+    except ValidationError:
+        return None
+
+
+def _parse_draft_lead_agent(
+    draft_goal: object,
+) -> BoardOnboardingLeadAgentDraft | None:
+    if not isinstance(draft_goal, dict):
+        return None
+    raw_lead = draft_goal.get("lead_agent")
+    if raw_lead is None:
+        return None
+    try:
+        return BoardOnboardingLeadAgentDraft.model_validate(raw_lead)
+    except ValidationError:
+        return None
+
+
+def _apply_user_profile(
+    auth: AuthContext,
+    profile: BoardOnboardingUserProfile | None,
+) -> bool:
+    if auth.user is None or profile is None:
+        return False
+
+    changed = False
+    if profile.preferred_name is not None:
+        auth.user.preferred_name = profile.preferred_name
+        changed = True
+    if profile.pronouns is not None:
+        auth.user.pronouns = profile.pronouns
+        changed = True
+    if profile.timezone is not None:
+        auth.user.timezone = profile.timezone
+        changed = True
+    if profile.notes is not None:
+        auth.user.notes = profile.notes
+        changed = True
+    if profile.context is not None:
+        auth.user.context = profile.context
+        changed = True
+    return changed
+
+
+def _lead_agent_options(
+    lead_agent: BoardOnboardingLeadAgentDraft | None,
+) -> LeadAgentOptions:
+    if lead_agent is None:
+        return LeadAgentOptions(action="provision")
+
+    lead_identity_profile: dict[str, str] = {}
+    if lead_agent.identity_profile:
+        lead_identity_profile.update(lead_agent.identity_profile)
+    if lead_agent.autonomy_level:
+        lead_identity_profile["autonomy_level"] = lead_agent.autonomy_level
+    if lead_agent.verbosity:
+        lead_identity_profile["verbosity"] = lead_agent.verbosity
+    if lead_agent.output_format:
+        lead_identity_profile["output_format"] = lead_agent.output_format
+    if lead_agent.update_cadence:
+        lead_identity_profile["update_cadence"] = lead_agent.update_cadence
+    if lead_agent.custom_instructions:
+        lead_identity_profile["custom_instructions"] = lead_agent.custom_instructions
+
+    return LeadAgentOptions(
+        agent_name=lead_agent.name,
+        identity_profile=lead_identity_profile or None,
+        action="provision",
+    )
 
 
 @router.get("", response_model=BoardOnboardingRead)
@@ -400,7 +392,7 @@ async def agent_onboarding_update(
 
 
 @router.post("/confirm", response_model=BoardRead)
-async def confirm_onboarding(  # noqa: C901, PLR0912, PLR0915
+async def confirm_onboarding(
     payload: BoardOnboardingConfirm,
     board: Board = BOARD_USER_WRITE_DEP,
     session: AsyncSession = SESSION_DEP,
@@ -425,73 +417,26 @@ async def confirm_onboarding(  # noqa: C901, PLR0912, PLR0915
     onboarding.status = "confirmed"
     onboarding.updated_at = utcnow()
 
-    user_profile: BoardOnboardingUserProfile | None = None
-    lead_agent: BoardOnboardingLeadAgentDraft | None = None
-    if isinstance(onboarding.draft_goal, dict):
-        raw_profile = onboarding.draft_goal.get("user_profile")
-        if raw_profile is not None:
-            try:
-                user_profile = BoardOnboardingUserProfile.model_validate(raw_profile)
-            except ValidationError:
-                user_profile = None
-        raw_lead = onboarding.draft_goal.get("lead_agent")
-        if raw_lead is not None:
-            try:
-                lead_agent = BoardOnboardingLeadAgentDraft.model_validate(raw_lead)
-            except ValidationError:
-                lead_agent = None
+    user_profile = _parse_draft_user_profile(onboarding.draft_goal)
+    if _apply_user_profile(auth, user_profile) and auth.user is not None:
+        session.add(auth.user)
 
-    if auth.user and user_profile:
-        changed = False
-        if user_profile.preferred_name is not None:
-            auth.user.preferred_name = user_profile.preferred_name
-            changed = True
-        if user_profile.pronouns is not None:
-            auth.user.pronouns = user_profile.pronouns
-            changed = True
-        if user_profile.timezone is not None:
-            auth.user.timezone = user_profile.timezone
-            changed = True
-        if user_profile.notes is not None:
-            auth.user.notes = user_profile.notes
-            changed = True
-        if user_profile.context is not None:
-            auth.user.context = user_profile.context
-            changed = True
-        if changed:
-            session.add(auth.user)
-
-    lead_identity_profile: dict[str, str] = {}
-    lead_name: str | None = None
-    if lead_agent:
-        lead_name = lead_agent.name
-        if lead_agent.identity_profile:
-            lead_identity_profile.update(lead_agent.identity_profile)
-        if lead_agent.autonomy_level:
-            lead_identity_profile["autonomy_level"] = lead_agent.autonomy_level
-        if lead_agent.verbosity:
-            lead_identity_profile["verbosity"] = lead_agent.verbosity
-        if lead_agent.output_format:
-            lead_identity_profile["output_format"] = lead_agent.output_format
-        if lead_agent.update_cadence:
-            lead_identity_profile["update_cadence"] = lead_agent.update_cadence
-        if lead_agent.custom_instructions:
-            lead_identity_profile["custom_instructions"] = (
-                lead_agent.custom_instructions
-            )
+    lead_agent = _parse_draft_lead_agent(onboarding.draft_goal)
+    lead_options = _lead_agent_options(lead_agent)
 
     gateway, config = await _gateway_config(session, board)
     session.add(board)
     session.add(onboarding)
     await session.commit()
     await session.refresh(board)
-    await _ensure_lead_agent(
+    await ensure_board_lead_agent(
         session,
-        board,
-        gateway,
-        config,
-        auth,
-        agent_name=lead_name,
-        identity_profile=lead_identity_profile or None,
+        request=LeadAgentRequest(
+            board=board,
+            gateway=gateway,
+            config=config,
+            user=auth.user,
+            options=lead_options,
+        ),
     )
     return board

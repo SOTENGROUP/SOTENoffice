@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 import time
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from html import unescape
 from typing import Final
 
 import httpx
@@ -14,6 +15,10 @@ SOULS_DIRECTORY_SITEMAP_URL: Final[str] = f"{SOULS_DIRECTORY_BASE_URL}/sitemap.x
 
 _SITEMAP_TTL_SECONDS: Final[int] = 60 * 60
 _SOUL_URL_MIN_PARTS: Final[int] = 6
+_LOC_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"<(?:[A-Za-z0-9_]+:)?loc>(.*?)</(?:[A-Za-z0-9_]+:)?loc>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,17 +41,10 @@ class SoulRef:
 
 def _parse_sitemap_soul_refs(sitemap_xml: str) -> list[SoulRef]:
     """Parse sitemap XML and extract valid souls.directory handle/slug refs."""
-    try:
-        # Souls sitemap is fetched from a known trusted host in this service flow.
-        root = ET.fromstring(sitemap_xml)  # noqa: S314
-    except ET.ParseError:
-        return []
-
-    # Handle both namespaced and non-namespaced sitemap XML.
+    # Extract <loc> values without XML entity expansion.
     urls = [
-        loc.text.strip()
-        for loc in root.iter()
-        if loc.tag.endswith("loc") and loc.text
+        unescape(match.group(1)).strip()
+        for match in _LOC_PATTERN.finditer(sitemap_xml)
     ]
 
     refs: list[SoulRef] = []

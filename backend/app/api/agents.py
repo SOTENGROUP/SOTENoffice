@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID, uuid4
@@ -46,6 +47,9 @@ from app.schemas.pagination import DefaultLimitOffsetPage
 from app.services.activity_log import record_activity
 from app.services.agent_provisioning import (
     DEFAULT_HEARTBEAT_CONFIG,
+    AgentProvisionRequest,
+    MainAgentProvisionRequest,
+    ProvisionOptions,
     cleanup_agent,
     provision_agent,
     provision_main_agent,
@@ -76,6 +80,25 @@ SESSION_DEP = Depends(get_session)
 ORG_ADMIN_DEP = Depends(require_org_admin)
 ACTOR_DEP = Depends(require_admin_or_agent)
 AUTH_DEP = Depends(get_auth_context)
+
+
+@dataclass(frozen=True, slots=True)
+class _AgentUpdateParams:
+    force: bool
+    auth: AuthContext
+    ctx: OrganizationContext
+
+
+def _agent_update_params(
+    *,
+    force: bool = False,
+    auth: AuthContext = AUTH_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> _AgentUpdateParams:
+    return _AgentUpdateParams(force=force, auth=auth, ctx=ctx)
+
+
+AGENT_UPDATE_PARAMS_DEP = Depends(_agent_update_params)
 
 
 def _parse_since(value: str | None) -> datetime | None:
@@ -199,6 +222,16 @@ def _to_agent_read(agent: Agent, main_session_keys: set[str]) -> AgentRead:
     )
 
 
+async def get_gateway_main_session_keys(session: AsyncSession) -> set[str]:
+    """Return gateway main-session keys used to compute `is_gateway_main`."""
+    return await _get_gateway_main_session_keys(session)
+
+
+def to_agent_read(agent: Agent, main_session_keys: set[str]) -> AgentRead:
+    """Convert an `Agent` model into its API read representation."""
+    return _to_agent_read(agent, main_session_keys)
+
+
 async def _find_gateway_for_main_session(
     session: AsyncSession, session_key: str | None,
 ) -> Gateway | None:
@@ -229,6 +262,11 @@ def _with_computed_status(agent: Agent) -> Agent:
     elif now - agent.last_seen_at > OFFLINE_AFTER:
         agent.status = "offline"
     return agent
+
+
+def with_computed_status(agent: Agent) -> Agent:
+    """Apply transient online/offline status derivation to an agent model."""
+    return _with_computed_status(agent)
 
 
 def _serialize_agent(agent: Agent, main_session_keys: set[str]) -> dict[str, object]:
@@ -313,6 +351,577 @@ def _record_instruction_failure(
         message=f"{action_label} message failed: {error}",
         agent_id=agent.id,
     )
+
+
+async def _coerce_agent_create_payload(
+    session: AsyncSession,
+    payload: AgentCreate,
+    actor: ActorContext,
+) -> AgentCreate:
+    if actor.actor_type == "user":
+        ctx = await _require_user_context(session, actor.user)
+        if not is_org_admin(ctx.member):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+        return payload
+
+    if actor.actor_type == "agent":
+        if not actor.agent or not actor.agent.is_board_lead:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only board leads can create agents",
+            )
+        if not actor.agent.board_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Board lead must be assigned to a board",
+            )
+        if payload.board_id and payload.board_id != actor.agent.board_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Board leads can only create agents in their own board",
+            )
+        return AgentCreate(**{**payload.model_dump(), "board_id": actor.agent.board_id})
+
+    return payload
+
+
+async def _ensure_unique_agent_name(
+    session: AsyncSession,
+    *,
+    board: Board,
+    gateway: Gateway,
+    requested_name: str,
+) -> None:
+    if not requested_name:
+        return
+
+    existing = (
+        await session.exec(
+            select(Agent)
+            .where(Agent.board_id == board.id)
+            .where(col(Agent.name).ilike(requested_name)),
+        )
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An agent with this name already exists on this board.",
+        )
+
+    existing_gateway = (
+        await session.exec(
+            select(Agent)
+            .join(Board, col(Agent.board_id) == col(Board.id))
+            .where(col(Board.gateway_id) == gateway.id)
+            .where(col(Agent.name).ilike(requested_name)),
+        )
+    ).first()
+    if existing_gateway:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "An agent with this name already exists in this gateway "
+                "workspace."
+            ),
+        )
+
+    desired_session_key = _build_session_key(requested_name)
+    existing_session_key = (
+        await session.exec(
+            select(Agent)
+            .join(Board, col(Agent.board_id) == col(Board.id))
+            .where(col(Board.gateway_id) == gateway.id)
+            .where(col(Agent.openclaw_session_id) == desired_session_key),
+        )
+    ).first()
+    if existing_session_key:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This agent name would collide with an existing workspace "
+                "session key. Pick a different name."
+            ),
+        )
+
+
+async def _persist_new_agent(
+    session: AsyncSession,
+    *,
+    data: dict[str, Any],
+    client_config: GatewayClientConfig,
+) -> tuple[Agent, str, str | None]:
+    agent = Agent.model_validate(data)
+    agent.status = "provisioning"
+    raw_token = generate_agent_token()
+    agent.agent_token_hash = hash_agent_token(raw_token)
+    if agent.heartbeat_config is None:
+        agent.heartbeat_config = DEFAULT_HEARTBEAT_CONFIG.copy()
+    agent.provision_requested_at = utcnow()
+    agent.provision_action = "provision"
+    session_key, session_error = await _ensure_gateway_session(
+        agent.name,
+        client_config,
+    )
+    agent.openclaw_session_id = session_key
+    session.add(agent)
+    await session.commit()
+    await session.refresh(agent)
+    return agent, raw_token, session_error
+
+
+async def _record_session_creation(
+    session: AsyncSession,
+    *,
+    agent: Agent,
+    session_error: str | None,
+) -> None:
+    if session_error:
+        record_activity(
+            session,
+            event_type="agent.session.failed",
+            message=f"Session sync failed for {agent.name}: {session_error}",
+            agent_id=agent.id,
+        )
+    else:
+        record_activity(
+            session,
+            event_type="agent.session.created",
+            message=f"Session created for {agent.name}.",
+            agent_id=agent.id,
+        )
+    await session.commit()
+
+
+async def _provision_new_agent(
+    session: AsyncSession,
+    *,
+    agent: Agent,
+    request: AgentProvisionRequest,
+    client_config: GatewayClientConfig,
+) -> None:
+    try:
+        await provision_agent(agent, request)
+        await _send_wakeup_message(agent, client_config, verb="provisioned")
+        agent.provision_confirm_token_hash = None
+        agent.provision_requested_at = None
+        agent.provision_action = None
+        agent.updated_at = utcnow()
+        session.add(agent)
+        await session.commit()
+        record_activity(
+            session,
+            event_type="agent.provision",
+            message=f"Provisioned directly for {agent.name}.",
+            agent_id=agent.id,
+        )
+        record_activity(
+            session,
+            event_type="agent.wakeup.sent",
+            message=f"Wakeup message sent to {agent.name}.",
+            agent_id=agent.id,
+        )
+        await session.commit()
+    except OpenClawGatewayError as exc:
+        _record_instruction_failure(session, agent, str(exc), "provision")
+        await session.commit()
+    except (OSError, RuntimeError, ValueError) as exc:  # pragma: no cover
+        _record_instruction_failure(session, agent, str(exc), "provision")
+        await session.commit()
+
+
+@dataclass(frozen=True, slots=True)
+class _AgentUpdateProvisionTarget:
+    is_main_agent: bool
+    board: Board | None
+    gateway: Gateway
+    client_config: GatewayClientConfig
+
+
+@dataclass(frozen=True, slots=True)
+class _AgentUpdateProvisionRequest:
+    target: _AgentUpdateProvisionTarget
+    raw_token: str
+    user: User | None
+    force_bootstrap: bool
+
+
+async def _validate_agent_update_inputs(
+    session: AsyncSession,
+    *,
+    ctx: OrganizationContext,
+    updates: dict[str, Any],
+    make_main: bool | None,
+) -> None:
+    if make_main is True and not is_org_admin(ctx.member):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    if "status" in updates:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="status is controlled by agent heartbeat",
+        )
+    if "board_id" in updates and updates["board_id"] is not None:
+        new_board = await _require_board(session, updates["board_id"])
+        if new_board.organization_id != ctx.organization.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        if not await has_board_access(
+            session,
+            member=ctx.member,
+            board=new_board,
+            write=True,
+        ):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+
+async def _apply_agent_update_mutations(
+    session: AsyncSession,
+    *,
+    agent: Agent,
+    updates: dict[str, Any],
+    make_main: bool | None,
+) -> tuple[Gateway | None, Gateway | None]:
+    main_gateway = await _find_gateway_for_main_session(
+        session,
+        agent.openclaw_session_id,
+    )
+    gateway_for_main: Gateway | None = None
+
+    if make_main is True:
+        board_source = updates.get("board_id") or agent.board_id
+        board_for_main = await _require_board(session, board_source)
+        gateway_for_main, _ = await _require_gateway(session, board_for_main)
+        updates["board_id"] = None
+        agent.is_board_lead = False
+        agent.openclaw_session_id = gateway_for_main.main_session_key
+        main_gateway = gateway_for_main
+    elif make_main is False:
+        agent.openclaw_session_id = None
+
+    if make_main is not True and "board_id" in updates:
+        await _require_board(session, updates["board_id"])
+    for key, value in updates.items():
+        setattr(agent, key, value)
+
+    if make_main is None and main_gateway is not None:
+        agent.board_id = None
+        agent.is_board_lead = False
+    agent.updated_at = utcnow()
+    if agent.heartbeat_config is None:
+        agent.heartbeat_config = DEFAULT_HEARTBEAT_CONFIG.copy()
+    session.add(agent)
+    await session.commit()
+    await session.refresh(agent)
+    return main_gateway, gateway_for_main
+
+
+async def _resolve_agent_update_target(
+    session: AsyncSession,
+    *,
+    agent: Agent,
+    make_main: bool | None,
+    main_gateway: Gateway | None,
+    gateway_for_main: Gateway | None,
+) -> _AgentUpdateProvisionTarget:
+    if make_main is True:
+        if gateway_for_main is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Main agent requires a gateway main_session_key",
+            )
+        if not gateway_for_main.main_session_key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Gateway main_session_key is required",
+            )
+        return _AgentUpdateProvisionTarget(
+            is_main_agent=True,
+            board=None,
+            gateway=gateway_for_main,
+            client_config=_gateway_client_config(gateway_for_main),
+        )
+
+    if make_main is None and agent.board_id is None and main_gateway is not None:
+        if not main_gateway.main_session_key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Gateway main_session_key is required",
+            )
+        return _AgentUpdateProvisionTarget(
+            is_main_agent=True,
+            board=None,
+            gateway=main_gateway,
+            client_config=_gateway_client_config(main_gateway),
+        )
+
+    if agent.board_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="board_id is required for non-main agents",
+        )
+    board = await _require_board(session, agent.board_id)
+    gateway, client_config = await _require_gateway(session, board)
+    return _AgentUpdateProvisionTarget(
+        is_main_agent=False,
+        board=board,
+        gateway=gateway,
+        client_config=client_config,
+    )
+
+
+async def _ensure_agent_update_session(
+    session: AsyncSession,
+    *,
+    agent: Agent,
+    client_config: GatewayClientConfig,
+) -> None:
+    session_key = agent.openclaw_session_id or _build_session_key(agent.name)
+    try:
+        await ensure_session(session_key, config=client_config, label=agent.name)
+        if not agent.openclaw_session_id:
+            agent.openclaw_session_id = session_key
+            session.add(agent)
+            await session.commit()
+            await session.refresh(agent)
+    except OpenClawGatewayError as exc:
+        _record_instruction_failure(session, agent, str(exc), "update")
+        await session.commit()
+
+
+def _mark_agent_update_pending(agent: Agent) -> str:
+    raw_token = generate_agent_token()
+    agent.agent_token_hash = hash_agent_token(raw_token)
+    agent.provision_requested_at = utcnow()
+    agent.provision_action = "update"
+    agent.status = "updating"
+    return raw_token
+
+
+async def _provision_updated_agent(
+    session: AsyncSession,
+    *,
+    agent: Agent,
+    request: _AgentUpdateProvisionRequest,
+) -> None:
+    try:
+        if request.target.is_main_agent:
+            await provision_main_agent(
+                agent,
+                MainAgentProvisionRequest(
+                    gateway=request.target.gateway,
+                    auth_token=request.raw_token,
+                    user=request.user,
+                    options=ProvisionOptions(
+                        action="update",
+                        force_bootstrap=request.force_bootstrap,
+                        reset_session=True,
+                    ),
+                ),
+            )
+        else:
+            if request.target.board is None:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="board is required for non-main agent provisioning",
+                )
+            await provision_agent(
+                agent,
+                AgentProvisionRequest(
+                    board=request.target.board,
+                    gateway=request.target.gateway,
+                    auth_token=request.raw_token,
+                    user=request.user,
+                    options=ProvisionOptions(
+                        action="update",
+                        force_bootstrap=request.force_bootstrap,
+                        reset_session=True,
+                    ),
+                ),
+            )
+        await _send_wakeup_message(
+            agent,
+            request.target.client_config,
+            verb="updated",
+        )
+        agent.provision_confirm_token_hash = None
+        agent.provision_requested_at = None
+        agent.provision_action = None
+        agent.status = "online"
+        agent.updated_at = utcnow()
+        session.add(agent)
+        await session.commit()
+        record_activity(
+            session,
+            event_type="agent.update.direct",
+            message=f"Updated directly for {agent.name}.",
+            agent_id=agent.id,
+        )
+        record_activity(
+            session,
+            event_type="agent.wakeup.sent",
+            message=f"Wakeup message sent to {agent.name}.",
+            agent_id=agent.id,
+        )
+        await session.commit()
+    except OpenClawGatewayError as exc:
+        _record_instruction_failure(session, agent, str(exc), "update")
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Gateway update failed: {exc}",
+        ) from exc
+    except (OSError, RuntimeError, ValueError) as exc:  # pragma: no cover
+        _record_instruction_failure(session, agent, str(exc), "update")
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected error updating agent provisioning.",
+        ) from exc
+
+
+def _heartbeat_lookup_statement(payload: AgentHeartbeatCreate) -> object:
+    statement = Agent.objects.filter_by(name=payload.name).statement
+    if payload.board_id is not None:
+        statement = statement.where(Agent.board_id == payload.board_id)
+    return statement
+
+
+async def _create_agent_from_heartbeat(
+    session: AsyncSession,
+    *,
+    payload: AgentHeartbeatCreate,
+    actor: ActorContext,
+) -> Agent:
+    if actor.actor_type == "agent":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if actor.actor_type == "user":
+        ctx = await _require_user_context(session, actor.user)
+        if not is_org_admin(ctx.member):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+    board = await _require_board(
+        session,
+        payload.board_id,
+        user=actor.user,
+        write=True,
+    )
+    gateway, client_config = await _require_gateway(session, board)
+    data: dict[str, Any] = {
+        "name": payload.name,
+        "board_id": board.id,
+        "heartbeat_config": DEFAULT_HEARTBEAT_CONFIG.copy(),
+    }
+    agent, raw_token, session_error = await _persist_new_agent(
+        session,
+        data=data,
+        client_config=client_config,
+    )
+    await _record_session_creation(
+        session,
+        agent=agent,
+        session_error=session_error,
+    )
+    await _provision_new_agent(
+        session,
+        agent=agent,
+        request=AgentProvisionRequest(
+            board=board,
+            gateway=gateway,
+            auth_token=raw_token,
+            user=actor.user,
+            options=ProvisionOptions(action="provision"),
+        ),
+        client_config=client_config,
+    )
+    return agent
+
+
+async def _handle_existing_user_heartbeat_agent(
+    session: AsyncSession,
+    *,
+    agent: Agent,
+    user: User | None,
+) -> None:
+    ctx = await _require_user_context(session, user)
+    await _require_agent_access(session, agent=agent, ctx=ctx, write=True)
+
+    if agent.agent_token_hash is not None:
+        return
+
+    raw_token = generate_agent_token()
+    agent.agent_token_hash = hash_agent_token(raw_token)
+    if agent.heartbeat_config is None:
+        agent.heartbeat_config = DEFAULT_HEARTBEAT_CONFIG.copy()
+    agent.provision_requested_at = utcnow()
+    agent.provision_action = "provision"
+    session.add(agent)
+    await session.commit()
+    await session.refresh(agent)
+    board = await _require_board(
+        session,
+        str(agent.board_id) if agent.board_id else None,
+        user=user,
+        write=True,
+    )
+    gateway, client_config = await _require_gateway(session, board)
+    await _provision_new_agent(
+        session,
+        agent=agent,
+        request=AgentProvisionRequest(
+            board=board,
+            gateway=gateway,
+            auth_token=raw_token,
+            user=user,
+            options=ProvisionOptions(action="provision"),
+        ),
+        client_config=client_config,
+    )
+
+
+async def _ensure_heartbeat_session_key(
+    session: AsyncSession,
+    *,
+    agent: Agent,
+    actor: ActorContext,
+) -> None:
+    if agent.openclaw_session_id:
+        return
+    board = await _require_board(
+        session,
+        str(agent.board_id) if agent.board_id else None,
+        user=actor.user if actor.actor_type == "user" else None,
+        write=actor.actor_type == "user",
+    )
+    _, client_config = await _require_gateway(session, board)
+    session_key, session_error = await _ensure_gateway_session(
+        agent.name,
+        client_config,
+    )
+    agent.openclaw_session_id = session_key
+    session.add(agent)
+    await _record_session_creation(
+        session,
+        agent=agent,
+        session_error=session_error,
+    )
+
+
+async def _commit_heartbeat(
+    session: AsyncSession,
+    *,
+    agent: Agent,
+    status_value: str | None,
+) -> AgentRead:
+    if status_value:
+        agent.status = status_value
+    elif agent.status == "provisioning":
+        agent.status = "online"
+    agent.last_seen_at = utcnow()
+    agent.updated_at = utcnow()
+    _record_heartbeat(session, agent)
+    session.add(agent)
+    await session.commit()
+    await session.refresh(agent)
+    main_session_keys = await _get_gateway_main_session_keys(session)
+    return _to_agent_read(_with_computed_status(agent), main_session_keys)
 
 
 async def _send_wakeup_message(
@@ -422,35 +1031,13 @@ async def stream_agents(
 
 
 @router.post("", response_model=AgentRead)
-async def create_agent(  # noqa: C901, PLR0912, PLR0915
+async def create_agent(
     payload: AgentCreate,
     session: AsyncSession = SESSION_DEP,
     actor: ActorContext = ACTOR_DEP,
 ) -> AgentRead:
     """Create and provision an agent."""
-    if actor.actor_type == "user":
-        ctx = await _require_user_context(session, actor.user)
-        if not is_org_admin(ctx.member):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
-    if actor.actor_type == "agent":
-        if not actor.agent or not actor.agent.is_board_lead:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only board leads can create agents",
-            )
-        if not actor.agent.board_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Board lead must be assigned to a board",
-            )
-        if payload.board_id and payload.board_id != actor.agent.board_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Board leads can only create agents in their own board",
-            )
-        payload = AgentCreate(
-            **{**payload.model_dump(), "board_id": actor.agent.board_id},
-        )
+    payload = await _coerce_agent_create_payload(session, payload, actor)
 
     board = await _require_board(
         session,
@@ -461,119 +1048,35 @@ async def create_agent(  # noqa: C901, PLR0912, PLR0915
     gateway, client_config = await _require_gateway(session, board)
     data = payload.model_dump()
     requested_name = (data.get("name") or "").strip()
-    if requested_name:
-        existing = (
-            await session.exec(
-                select(Agent)
-                .where(Agent.board_id == board.id)
-                .where(col(Agent.name).ilike(requested_name)),
-            )
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="An agent with this name already exists on this board.",
-            )
-        # Prevent session/workspace collisions inside the gateway workspace.
-        # Agents on different boards can still share one gateway root.
-        existing_gateway = (
-            await session.exec(
-                select(Agent)
-                .join(Board, col(Agent.board_id) == col(Board.id))
-                .where(col(Board.gateway_id) == gateway.id)
-                .where(col(Agent.name).ilike(requested_name)),
-            )
-        ).first()
-        if existing_gateway:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "An agent with this name already exists in this gateway "
-                    "workspace."
-                ),
-            )
-        desired_session_key = _build_session_key(requested_name)
-        existing_session_key = (
-            await session.exec(
-                select(Agent)
-                .join(Board, col(Agent.board_id) == col(Board.id))
-                .where(col(Board.gateway_id) == gateway.id)
-                .where(col(Agent.openclaw_session_id) == desired_session_key),
-            )
-        ).first()
-        if existing_session_key:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "This agent name would collide with an existing workspace "
-                    "session key. Pick a different name."
-                ),
-            )
-    agent = Agent.model_validate(data)
-    agent.status = "provisioning"
-    raw_token = generate_agent_token()
-    agent.agent_token_hash = hash_agent_token(raw_token)
-    if agent.heartbeat_config is None:
-        agent.heartbeat_config = DEFAULT_HEARTBEAT_CONFIG.copy()
-    agent.provision_requested_at = utcnow()
-    agent.provision_action = "provision"
-    session_key, session_error = await _ensure_gateway_session(
-        agent.name, client_config,
+    await _ensure_unique_agent_name(
+        session,
+        board=board,
+        gateway=gateway,
+        requested_name=requested_name,
     )
-    agent.openclaw_session_id = session_key
-    session.add(agent)
-    await session.commit()
-    await session.refresh(agent)
-    if session_error:
-        record_activity(
-            session,
-            event_type="agent.session.failed",
-            message=f"Session sync failed for {agent.name}: {session_error}",
-            agent_id=agent.id,
-        )
-    else:
-        record_activity(
-            session,
-            event_type="agent.session.created",
-            message=f"Session created for {agent.name}.",
-            agent_id=agent.id,
-        )
-    await session.commit()
-    try:
-        await provision_agent(
-            agent,
-            board,
-            gateway,
-            raw_token,
-            actor.user if actor.actor_type == "user" else None,
-            action="provision",
-        )
-        await _send_wakeup_message(agent, client_config, verb="provisioned")
-        agent.provision_confirm_token_hash = None
-        agent.provision_requested_at = None
-        agent.provision_action = None
-        agent.updated_at = utcnow()
-        session.add(agent)
-        await session.commit()
-        record_activity(
-            session,
-            event_type="agent.provision",
-            message=f"Provisioned directly for {agent.name}.",
-            agent_id=agent.id,
-        )
-        record_activity(
-            session,
-            event_type="agent.wakeup.sent",
-            message=f"Wakeup message sent to {agent.name}.",
-            agent_id=agent.id,
-        )
-        await session.commit()
-    except OpenClawGatewayError as exc:
-        _record_instruction_failure(session, agent, str(exc), "provision")
-        await session.commit()
-    except (OSError, RuntimeError, ValueError) as exc:  # pragma: no cover
-        _record_instruction_failure(session, agent, str(exc), "provision")
-        await session.commit()
+    agent, raw_token, session_error = await _persist_new_agent(
+        session,
+        data=data,
+        client_config=client_config,
+    )
+    await _record_session_creation(
+        session,
+        agent=agent,
+        session_error=session_error,
+    )
+    provision_request = AgentProvisionRequest(
+        board=board,
+        gateway=gateway,
+        auth_token=raw_token,
+        user=actor.user if actor.actor_type == "user" else None,
+        options=ProvisionOptions(action="provision"),
+    )
+    await _provision_new_agent(
+        session,
+        agent=agent,
+        request=provision_request,
+        client_config=client_config,
+    )
     main_session_keys = await _get_gateway_main_session_keys(session)
     return _to_agent_read(_with_computed_status(agent), main_session_keys)
 
@@ -594,188 +1097,61 @@ async def get_agent(
 
 
 @router.patch("/{agent_id}", response_model=AgentRead)
-async def update_agent(  # noqa: C901, PLR0912, PLR0913, PLR0915
+async def update_agent(
     agent_id: str,
     payload: AgentUpdate,
-    *,
-    force: bool = False,
+    params: _AgentUpdateParams = AGENT_UPDATE_PARAMS_DEP,
     session: AsyncSession = SESSION_DEP,
-    auth: AuthContext = AUTH_DEP,
-    ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> AgentRead:
     """Update agent metadata and optionally reprovision."""
     agent = await Agent.objects.by_id(agent_id).first(session)
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    await _require_agent_access(session, agent=agent, ctx=ctx, write=True)
+    await _require_agent_access(session, agent=agent, ctx=params.ctx, write=True)
     updates = payload.model_dump(exclude_unset=True)
     make_main = updates.pop("is_gateway_main", None)
-    if make_main is True and not is_org_admin(ctx.member):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
-    if "status" in updates:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="status is controlled by agent heartbeat",
-        )
-    if "board_id" in updates and updates["board_id"] is not None:
-        new_board = await _require_board(session, updates["board_id"])
-        if new_board.organization_id != ctx.organization.id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        if not await has_board_access(
-            session, member=ctx.member, board=new_board, write=True,
-        ):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
-    if not updates and not force and make_main is None:
+    await _validate_agent_update_inputs(
+        session,
+        ctx=params.ctx,
+        updates=updates,
+        make_main=make_main,
+    )
+    if not updates and not params.force and make_main is None:
         main_session_keys = await _get_gateway_main_session_keys(session)
         return _to_agent_read(_with_computed_status(agent), main_session_keys)
-    main_gateway = await _find_gateway_for_main_session(
-        session, agent.openclaw_session_id,
+    main_gateway, gateway_for_main = await _apply_agent_update_mutations(
+        session,
+        agent=agent,
+        updates=updates,
+        make_main=make_main,
     )
-    gateway_for_main: Gateway | None = None
-    if make_main is True:
-        board_source = updates.get("board_id") or agent.board_id
-        board_for_main = await _require_board(session, board_source)
-        gateway_for_main, _ = await _require_gateway(session, board_for_main)
-        updates["board_id"] = None
-        agent.is_board_lead = False
-        agent.openclaw_session_id = gateway_for_main.main_session_key
-        main_gateway = gateway_for_main
-    elif make_main is False:
-        agent.openclaw_session_id = None
-    if make_main is not True and "board_id" in updates:
-        await _require_board(session, updates["board_id"])
-    for key, value in updates.items():
-        setattr(agent, key, value)
-    if make_main is None and main_gateway is not None:
-        agent.board_id = None
-        agent.is_board_lead = False
-    agent.updated_at = utcnow()
-    if agent.heartbeat_config is None:
-        agent.heartbeat_config = DEFAULT_HEARTBEAT_CONFIG.copy()
+    target = await _resolve_agent_update_target(
+        session,
+        agent=agent,
+        make_main=make_main,
+        main_gateway=main_gateway,
+        gateway_for_main=gateway_for_main,
+    )
+    await _ensure_agent_update_session(
+        session,
+        agent=agent,
+        client_config=target.client_config,
+    )
+    raw_token = _mark_agent_update_pending(agent)
     session.add(agent)
     await session.commit()
     await session.refresh(agent)
-    is_main_agent = False
-    board: Board | None = None
-    gateway: Gateway | None = None
-    client_config: GatewayClientConfig | None = None
-    if make_main is True:
-        is_main_agent = True
-        gateway = gateway_for_main
-    elif make_main is None and agent.board_id is None and main_gateway is not None:
-        is_main_agent = True
-        gateway = main_gateway
-    if is_main_agent:
-        if gateway is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Main agent requires a gateway main_session_key",
-            )
-        if not gateway.main_session_key:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Gateway main_session_key is required",
-            )
-        client_config = _gateway_client_config(gateway)
-    else:
-        if agent.board_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="board_id is required for non-main agents",
-            )
-        board = await _require_board(session, agent.board_id)
-        gateway, client_config = await _require_gateway(session, board)
-    session_key = agent.openclaw_session_id or _build_session_key(agent.name)
-    try:
-        if client_config is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Gateway configuration is required",
-            )
-        await ensure_session(session_key, config=client_config, label=agent.name)
-        if not agent.openclaw_session_id:
-            agent.openclaw_session_id = session_key
-            session.add(agent)
-            await session.commit()
-            await session.refresh(agent)
-    except OpenClawGatewayError as exc:
-        _record_instruction_failure(session, agent, str(exc), "update")
-        await session.commit()
-    raw_token = generate_agent_token()
-    agent.agent_token_hash = hash_agent_token(raw_token)
-    agent.provision_requested_at = utcnow()
-    agent.provision_action = "update"
-    agent.status = "updating"
-    session.add(agent)
-    await session.commit()
-    await session.refresh(agent)
-    try:
-        if gateway is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Gateway configuration is required",
-            )
-        if is_main_agent:
-            await provision_main_agent(
-                agent,
-                gateway,
-                raw_token,
-                auth.user,
-                action="update",
-                force_bootstrap=force,
-                reset_session=True,
-            )
-        else:
-            if board is None:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="board is required for non-main agent provisioning",
-                )
-            await provision_agent(
-                agent,
-                board,
-                gateway,
-                raw_token,
-                auth.user,
-                action="update",
-                force_bootstrap=force,
-                reset_session=True,
-            )
-        await _send_wakeup_message(agent, client_config, verb="updated")
-        agent.provision_confirm_token_hash = None
-        agent.provision_requested_at = None
-        agent.provision_action = None
-        agent.status = "online"
-        agent.updated_at = utcnow()
-        session.add(agent)
-        await session.commit()
-        record_activity(
-            session,
-            event_type="agent.update.direct",
-            message=f"Updated directly for {agent.name}.",
-            agent_id=agent.id,
-        )
-        record_activity(
-            session,
-            event_type="agent.wakeup.sent",
-            message=f"Wakeup message sent to {agent.name}.",
-            agent_id=agent.id,
-        )
-        await session.commit()
-    except OpenClawGatewayError as exc:
-        _record_instruction_failure(session, agent, str(exc), "update")
-        await session.commit()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gateway update failed: {exc}",
-        ) from exc
-    except (OSError, RuntimeError, ValueError) as exc:  # pragma: no cover
-        _record_instruction_failure(session, agent, str(exc), "update")
-        await session.commit()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unexpected error updating agent provisioning.",
-        ) from exc
+    provision_request = _AgentUpdateProvisionRequest(
+        target=target,
+        raw_token=raw_token,
+        user=params.auth.user,
+        force_bootstrap=params.force,
+    )
+    await _provision_updated_agent(
+        session,
+        agent=agent,
+        request=provision_request,
+    )
     main_session_keys = await _get_gateway_main_session_keys(session)
     return _to_agent_read(_with_computed_status(agent), main_session_keys)
 
@@ -798,22 +1174,15 @@ async def heartbeat_agent(
         if not is_org_admin(ctx.member):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
         await _require_agent_access(session, agent=agent, ctx=ctx, write=True)
-    if payload.status:
-        agent.status = payload.status
-    elif agent.status == "provisioning":
-        agent.status = "online"
-    agent.last_seen_at = utcnow()
-    agent.updated_at = utcnow()
-    _record_heartbeat(session, agent)
-    session.add(agent)
-    await session.commit()
-    await session.refresh(agent)
-    main_session_keys = await _get_gateway_main_session_keys(session)
-    return _to_agent_read(_with_computed_status(agent), main_session_keys)
+    return await _commit_heartbeat(
+        session,
+        agent=agent,
+        status_value=payload.status,
+    )
 
 
 @router.post("/heartbeat", response_model=AgentRead)
-async def heartbeat_or_create_agent(  # noqa: C901, PLR0912, PLR0915
+async def heartbeat_or_create_agent(
     payload: AgentHeartbeatCreate,
     session: AsyncSession = SESSION_DEP,
     actor: ActorContext = ACTOR_DEP,
@@ -829,179 +1198,32 @@ async def heartbeat_or_create_agent(  # noqa: C901, PLR0912, PLR0915
             actor=actor,
         )
 
-    statement = Agent.objects.filter_by(name=payload.name).statement
-    if payload.board_id is not None:
-        statement = statement.where(Agent.board_id == payload.board_id)
-    agent = (await session.exec(statement)).first()
+    agent = (await session.exec(_heartbeat_lookup_statement(payload))).first()
     if agent is None:
-        if actor.actor_type == "agent":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-        if actor.actor_type == "user":
-            ctx = await _require_user_context(session, actor.user)
-            if not is_org_admin(ctx.member):
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
-        board = await _require_board(
+        agent = await _create_agent_from_heartbeat(
             session,
-            payload.board_id,
-            user=actor.user,
-            write=True,
+            payload=payload,
+            actor=actor,
         )
-        gateway, client_config = await _require_gateway(session, board)
-        agent = Agent(
-            name=payload.name,
-            status="provisioning",
-            board_id=board.id,
-            heartbeat_config=DEFAULT_HEARTBEAT_CONFIG.copy(),
-        )
-        raw_token = generate_agent_token()
-        agent.agent_token_hash = hash_agent_token(raw_token)
-        agent.provision_requested_at = utcnow()
-        agent.provision_action = "provision"
-        session_key, session_error = await _ensure_gateway_session(
-            agent.name, client_config,
-        )
-        agent.openclaw_session_id = session_key
-        session.add(agent)
-        await session.commit()
-        await session.refresh(agent)
-        if session_error:
-            record_activity(
-                session,
-                event_type="agent.session.failed",
-                message=f"Session sync failed for {agent.name}: {session_error}",
-                agent_id=agent.id,
-            )
-        else:
-            record_activity(
-                session,
-                event_type="agent.session.created",
-                message=f"Session created for {agent.name}.",
-                agent_id=agent.id,
-            )
-        await session.commit()
-        try:
-            await provision_agent(
-                agent, board, gateway, raw_token, actor.user, action="provision",
-            )
-            await _send_wakeup_message(agent, client_config, verb="provisioned")
-            agent.provision_confirm_token_hash = None
-            agent.provision_requested_at = None
-            agent.provision_action = None
-            agent.updated_at = utcnow()
-            session.add(agent)
-            await session.commit()
-            record_activity(
-                session,
-                event_type="agent.provision",
-                message=f"Provisioned directly for {agent.name}.",
-                agent_id=agent.id,
-            )
-            record_activity(
-                session,
-                event_type="agent.wakeup.sent",
-                message=f"Wakeup message sent to {agent.name}.",
-                agent_id=agent.id,
-            )
-            await session.commit()
-        except OpenClawGatewayError as exc:
-            _record_instruction_failure(session, agent, str(exc), "provision")
-            await session.commit()
-        except (OSError, RuntimeError, ValueError) as exc:  # pragma: no cover
-            _record_instruction_failure(session, agent, str(exc), "provision")
-            await session.commit()
     elif actor.actor_type == "user":
-        ctx = await _require_user_context(session, actor.user)
-        await _require_agent_access(session, agent=agent, ctx=ctx, write=True)
-
-        if agent.agent_token_hash is None:
-            raw_token = generate_agent_token()
-            agent.agent_token_hash = hash_agent_token(raw_token)
-            if agent.heartbeat_config is None:
-                agent.heartbeat_config = DEFAULT_HEARTBEAT_CONFIG.copy()
-            agent.provision_requested_at = utcnow()
-            agent.provision_action = "provision"
-            session.add(agent)
-            await session.commit()
-            await session.refresh(agent)
-            try:
-                board = await _require_board(
-                    session,
-                    str(agent.board_id) if agent.board_id else None,
-                    user=actor.user,
-                    write=True,
-                )
-                gateway, client_config = await _require_gateway(session, board)
-                await provision_agent(
-                    agent, board, gateway, raw_token, actor.user, action="provision",
-                )
-                await _send_wakeup_message(agent, client_config, verb="provisioned")
-                agent.provision_confirm_token_hash = None
-                agent.provision_requested_at = None
-                agent.provision_action = None
-                agent.updated_at = utcnow()
-                session.add(agent)
-                await session.commit()
-                record_activity(
-                    session,
-                    event_type="agent.provision",
-                    message=f"Provisioned directly for {agent.name}.",
-                    agent_id=agent.id,
-                )
-                record_activity(
-                    session,
-                    event_type="agent.wakeup.sent",
-                    message=f"Wakeup message sent to {agent.name}.",
-                    agent_id=agent.id,
-                )
-                await session.commit()
-            except OpenClawGatewayError as exc:
-                _record_instruction_failure(session, agent, str(exc), "provision")
-                await session.commit()
-            except (OSError, RuntimeError, ValueError) as exc:  # pragma: no cover
-                _record_instruction_failure(session, agent, str(exc), "provision")
-                await session.commit()
+        await _handle_existing_user_heartbeat_agent(
+            session,
+            agent=agent,
+            user=actor.user,
+        )
     elif actor.actor_type == "agent" and actor.agent and actor.agent.id != agent.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
-    if not agent.openclaw_session_id:
-        board = await _require_board(
-            session,
-            str(agent.board_id) if agent.board_id else None,
-            user=actor.user if actor.actor_type == "user" else None,
-            write=actor.actor_type == "user",
-        )
-        gateway, client_config = await _require_gateway(session, board)
-        session_key, session_error = await _ensure_gateway_session(
-            agent.name, client_config,
-        )
-        agent.openclaw_session_id = session_key
-        if session_error:
-            record_activity(
-                session,
-                event_type="agent.session.failed",
-                message=f"Session sync failed for {agent.name}: {session_error}",
-                agent_id=agent.id,
-            )
-        else:
-            record_activity(
-                session,
-                event_type="agent.session.created",
-                message=f"Session created for {agent.name}.",
-                agent_id=agent.id,
-            )
-        await session.commit()
-    if payload.status:
-        agent.status = payload.status
-    elif agent.status == "provisioning":
-        agent.status = "online"
-    agent.last_seen_at = utcnow()
-    agent.updated_at = utcnow()
-    _record_heartbeat(session, agent)
-    session.add(agent)
-    await session.commit()
-    await session.refresh(agent)
-    main_session_keys = await _get_gateway_main_session_keys(session)
-    return _to_agent_read(_with_computed_status(agent), main_session_keys)
+    await _ensure_heartbeat_session_key(
+        session,
+        agent=agent,
+        actor=actor,
+    )
+    return await _commit_heartbeat(
+        session,
+        agent=agent,
+        status_value=payload.status,
+    )
 
 
 @router.delete("/{agent_id}", response_model=OkResponse)

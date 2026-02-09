@@ -28,7 +28,13 @@ from app.models.boards import Board
 from app.models.gateways import Gateway
 from app.models.users import User
 from app.schemas.gateways import GatewayTemplatesSyncError, GatewayTemplatesSyncResult
-from app.services.agent_provisioning import provision_agent, provision_main_agent
+from app.services.agent_provisioning import (
+    AgentProvisionRequest,
+    MainAgentProvisionRequest,
+    ProvisionOptions,
+    provision_agent,
+    provision_main_agent,
+)
 
 _TOOLS_KV_RE = re.compile(r"^(?P<key>[A-Z0-9_]+)=(?P<value>.*)$")
 SESSION_KEY_PARTS_MIN = 2
@@ -480,13 +486,17 @@ async def _sync_one_agent(
         async def _do_provision() -> None:
             await provision_agent(
                 agent,
-                board,
-                ctx.gateway,
-                auth_token,
-                ctx.options.user,
-                action="update",
-                force_bootstrap=ctx.options.force_bootstrap,
-                reset_session=ctx.options.reset_sessions,
+                AgentProvisionRequest(
+                    board=board,
+                    gateway=ctx.gateway,
+                    auth_token=auth_token,
+                    user=ctx.options.user,
+                    options=ProvisionOptions(
+                        action="update",
+                        force_bootstrap=ctx.options.force_bootstrap,
+                        reset_session=ctx.options.reset_sessions,
+                    ),
+                ),
             )
 
         await _with_gateway_retry(_do_provision, backoff=ctx.backoff)
@@ -564,12 +574,16 @@ async def _sync_main_agent(
         async def _do_provision_main() -> None:
             await provision_main_agent(
                 main_agent,
-                ctx.gateway,
-                token,
-                ctx.options.user,
-                action="update",
-                force_bootstrap=ctx.options.force_bootstrap,
-                reset_session=ctx.options.reset_sessions,
+                MainAgentProvisionRequest(
+                    gateway=ctx.gateway,
+                    auth_token=token,
+                    user=ctx.options.user,
+                    options=ProvisionOptions(
+                        action="update",
+                        force_bootstrap=ctx.options.force_bootstrap,
+                        reset_session=ctx.options.reset_sessions,
+                    ),
+                ),
             )
 
         await _with_gateway_retry(_do_provision_main, backoff=ctx.backoff)

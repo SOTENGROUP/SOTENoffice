@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TCH003
-from uuid import UUID  # noqa: TCH003
+from datetime import datetime
+from uuid import UUID
 
 from pydantic import field_validator
 from sqlmodel import Field, SQLModel
+
+RUNTIME_ANNOTATION_TYPES = (datetime, UUID)
 
 
 class GatewayBase(SQLModel):

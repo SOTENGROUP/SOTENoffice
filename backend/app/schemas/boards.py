@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TCH003
+from datetime import datetime
 from typing import Self
-from uuid import UUID  # noqa: TCH003
+from uuid import UUID
 
 from pydantic import model_validator
 from sqlmodel import SQLModel
@@ -13,6 +13,7 @@ _ERR_GOAL_FIELDS_REQUIRED = (
     "Confirmed goal boards require objective and success_metrics"
 )
 _ERR_GATEWAY_REQUIRED = "gateway_id is required"
+RUNTIME_ANNOTATION_TYPES = (datetime, UUID)
 
 
 class BoardBase(SQLModel):

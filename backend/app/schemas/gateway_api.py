@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from sqlmodel import SQLModel
 
-from app.schemas.common import NonEmptyStr  # noqa: TCH001
+from app.schemas.common import NonEmptyStr
+
+RUNTIME_ANNOTATION_TYPES = (NonEmptyStr,)
 
 
 class GatewaySessionMessageRequest(SQLModel):

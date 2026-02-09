@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TCH003
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlmodel import Field
 
 from app.core.time import utcnow
 from app.models.tenancy import TenantScoped
+
+RUNTIME_ANNOTATION_TYPES = (datetime,)
 
 
 class BoardGroup(TenantScoped, table=True):
