@@ -10,5 +10,11 @@ export type DashboardRangeSeriesRange =
 
 export const DashboardRangeSeriesRange = {
   "24h": "24h",
+  "3d": "3d",
   "7d": "7d",
+  "14d": "14d",
+  "1m": "1m",
+  "3m": "3m",
+  "6m": "6m",
+  "1y": "1y",
 } as const;

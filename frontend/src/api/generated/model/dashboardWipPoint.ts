@@ -13,4 +13,5 @@ export interface DashboardWipPoint {
   inbox: number;
   in_progress: number;
   review: number;
+  done: number;
 }

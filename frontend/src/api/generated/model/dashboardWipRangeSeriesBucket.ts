@@ -11,4 +11,6 @@ export type DashboardWipRangeSeriesBucket =
 export const DashboardWipRangeSeriesBucket = {
   hour: "hour",
   day: "day",
+  week: "week",
+  month: "month",
 } as const;

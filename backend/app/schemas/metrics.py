@@ -8,6 +8,8 @@ from typing import Literal
 from sqlmodel import SQLModel
 
 RUNTIME_ANNOTATION_TYPES = (datetime,)
+DashboardRangeKey = Literal["24h", "3d", "7d", "14d", "1m", "3m", "6m", "1y"]
+DashboardBucketKey = Literal["hour", "day", "week", "month"]
 
 
 class DashboardSeriesPoint(SQLModel):
@@ -24,21 +26,22 @@ class DashboardWipPoint(SQLModel):
     inbox: int
     in_progress: int
     review: int
+    done: int
 
 
 class DashboardRangeSeries(SQLModel):
     """Series payload for a single range/bucket combination."""
 
-    range: Literal["24h", "7d"]
-    bucket: Literal["hour", "day"]
+    range: DashboardRangeKey
+    bucket: DashboardBucketKey
     points: list[DashboardSeriesPoint]
 
 
 class DashboardWipRangeSeries(SQLModel):
     """WIP series payload for a single range/bucket combination."""
 
-    range: Literal["24h", "7d"]
-    bucket: Literal["hour", "day"]
+    range: DashboardRangeKey
+    bucket: DashboardBucketKey
     points: list[DashboardWipPoint]
 
 
@@ -68,7 +71,7 @@ class DashboardKpis(SQLModel):
 class DashboardMetrics(SQLModel):
     """Complete dashboard metrics response payload."""
 
-    range: Literal["24h", "7d"]
+    range: DashboardRangeKey
     generated_at: datetime
     kpis: DashboardKpis
     throughput: DashboardSeriesSet
