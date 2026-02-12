@@ -159,9 +159,8 @@ describe("/boards/:id task board", () => {
     cy.contains("Inbox task").should("be.visible");
 
     // Open create task flow.
-    cy.contains("button", /create task|new task|add task|\+/i)
-      .first()
-      .click({ force: true });
+    // Board page uses an icon-only button with aria-label="New task".
+    cy.get('button[aria-label="New task"]').click({ force: true });
 
     cy.get("input")
       .filter(
