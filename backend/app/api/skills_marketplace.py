@@ -378,6 +378,9 @@ def _collect_pack_skills_from_repo(
 
 def _collect_pack_skills(source_url: str) -> list[PackSkillCandidate]:
     """Clone a pack repository and collect skills from index or `skills/**/SKILL.md`."""
+    # Defense-in-depth: validate again at point of use before invoking git.
+    _validate_pack_source_url(source_url)
+
     with TemporaryDirectory(prefix="skill-pack-sync-") as tmp_dir:
         repo_dir = Path(tmp_dir)
         try:
