@@ -44,6 +44,7 @@ class GatewayTemplateSyncQuery:
     """Sync options parsed from query args for gateway template operations."""
 
     include_main: bool
+    lead_only: bool
     reset_sessions: bool
     rotate_tokens: bool
     force_bootstrap: bool

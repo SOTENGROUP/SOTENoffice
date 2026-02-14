@@ -41,6 +41,7 @@ INCLUDE_MAIN_QUERY = Query(default=True)
 RESET_SESSIONS_QUERY = Query(default=False)
 ROTATE_TOKENS_QUERY = Query(default=False)
 FORCE_BOOTSTRAP_QUERY = Query(default=False)
+LEAD_ONLY_QUERY = Query(default=False)
 BOARD_ID_QUERY = Query(default=None)
 _RUNTIME_TYPE_REFERENCES = (UUID,)
 
@@ -48,6 +49,7 @@ _RUNTIME_TYPE_REFERENCES = (UUID,)
 def _template_sync_query(
     *,
     include_main: bool = INCLUDE_MAIN_QUERY,
+    lead_only: bool = LEAD_ONLY_QUERY,
     reset_sessions: bool = RESET_SESSIONS_QUERY,
     rotate_tokens: bool = ROTATE_TOKENS_QUERY,
     force_bootstrap: bool = FORCE_BOOTSTRAP_QUERY,
@@ -55,6 +57,7 @@ def _template_sync_query(
 ) -> GatewayTemplateSyncQuery:
     return GatewayTemplateSyncQuery(
         include_main=include_main,
+        lead_only=lead_only,
         reset_sessions=reset_sessions,
         rotate_tokens=rotate_tokens,
         force_bootstrap=force_bootstrap,

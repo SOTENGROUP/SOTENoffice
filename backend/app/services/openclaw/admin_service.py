@@ -343,6 +343,7 @@ class GatewayAdminLifecycleService(OpenClawDBService):
             GatewayTemplateSyncOptions(
                 user=auth.user,
                 include_main=query.include_main,
+                lead_only=query.lead_only,
                 reset_sessions=query.reset_sessions,
                 rotate_tokens=query.rotate_tokens,
                 force_bootstrap=query.force_bootstrap,

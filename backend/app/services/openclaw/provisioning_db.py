@@ -109,6 +109,7 @@ class GatewayTemplateSyncOptions:
 
     user: User | None
     include_main: bool = True
+    lead_only: bool = False
     reset_sessions: bool = False
     rotate_tokens: bool = False
     force_bootstrap: bool = False
@@ -246,6 +247,7 @@ class OpenClawProvisioningService(OpenClawDBService):
             options = GatewayTemplateSyncOptions(
                 user=template_user,
                 include_main=options.include_main,
+                lead_only=options.lead_only,
                 reset_sessions=options.reset_sessions,
                 rotate_tokens=options.rotate_tokens,
                 force_bootstrap=options.force_bootstrap,
@@ -288,11 +290,12 @@ class OpenClawProvisioningService(OpenClawDBService):
             return result
         paused_board_ids = await _paused_board_ids(self.session, list(boards_by_id.keys()))
         if boards_by_id:
-            agents = await (
-                Agent.objects.by_field_in("board_id", list(boards_by_id.keys()))
-                .order_by(col(Agent.created_at).asc())
-                .all(self.session)
+            query = Agent.objects.by_field_in("board_id", list(boards_by_id.keys())).order_by(
+                col(Agent.created_at).asc(),
             )
+            if options.lead_only:
+                query = query.filter(col(Agent.is_board_lead).is_(True))
+            agents = await query.all(self.session)
         else:
             agents = []
 

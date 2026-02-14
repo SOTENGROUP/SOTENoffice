@@ -30,6 +30,11 @@ def _parse_args() -> argparse.Namespace:
         help="Also sync the gateway main agent (default: true)",
     )
     parser.add_argument(
+        "--lead-only",
+        action="store_true",
+        help="Sync only board lead agents",
+    )
+    parser.add_argument(
         "--reset-sessions",
         action="store_true",
         help=("Reset agent sessions after syncing files " "(forces agents to re-read workspace)"),
@@ -72,6 +77,7 @@ async def _run() -> int:
             GatewayTemplateSyncOptions(
                 user=None,
                 include_main=bool(args.include_main),
+                lead_only=bool(args.lead_only),
                 reset_sessions=bool(args.reset_sessions),
                 rotate_tokens=bool(args.rotate_tokens),
                 force_bootstrap=bool(args.force_bootstrap),
