@@ -17,6 +17,11 @@ services:
       timeout: 3s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
   backend:
     build:
       # Build from repo root so the backend image can include repo-level assets
@@ -32,9 +37,12 @@ services:
       DB_AUTO_MIGRATE: ${DB_AUTO_MIGRATE:-true}
       AUTH_MODE: ${AUTH_MODE}
       LOCAL_AUTH_TOKEN: ${LOCAL_AUTH_TOKEN}
+      WEBHOOK_REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - "${BACKEND_PORT:-8000}:8000"
 
@@ -57,6 +65,38 @@ services:
       - backend
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
+
+  webhook-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["rq", "worker", "webhook-dispatch", "-u", "redis://redis:6379/0"]
+    depends_on:
+      - redis
+      - backend
+    environment:
+      WEBHOOK_REDIS_URL: redis://redis:6379/0
+      WEBHOOK_QUEUE_NAME: webhook-dispatch
+    restart: unless-stopped
+
+  webhook-dispatch-cron:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command:
+      - sh
+      - -c
+      - |
+          python -c "from app.services.webhooks.scheduler import bootstrap_webhook_dispatch_schedule; bootstrap_webhook_dispatch_schedule()" && \
+          rqscheduler -u redis://redis:6379/0 -i 60
+    depends_on:
+      - redis
+      - webhook-worker
+    environment:
+      WEBHOOK_REDIS_URL: redis://redis:6379/0
+      WEBHOOK_QUEUE_NAME: webhook-dispatch
+      WEBHOOK_DISPATCH_SCHEDULE_ID: webhook-dispatch-batch
+    restart: unless-stopped
 
 volumes:
   postgres_data:

@@ -29,6 +29,7 @@ from app.schemas.board_webhooks import (
 from app.schemas.common import OkResponse
 from app.schemas.pagination import DefaultLimitOffsetPage
 from app.services.openclaw.gateway_dispatch import GatewayDispatchService
+from app.services.webhooks.queue import QueuedWebhookDelivery, enqueue_webhook_delivery
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -164,6 +165,12 @@ def _captured_headers(request: Request) -> dict[str, str] | None:
         if normalized in {"content-type", "user-agent"} or normalized.startswith("x-"):
             captured[normalized] = value
     return captured or None
+
+
+def _extract_webhook_event(headers: dict[str, str] | None) -> str | None:
+    if not headers:
+        return None
+    return headers.get("x-github-event") or headers.get("x-event-type")
 
 
 def _payload_preview(
@@ -412,6 +419,7 @@ async def ingest_board_webhook(
         )
 
     content_type = request.headers.get("content-type")
+    headers = _captured_headers(request)
     payload_value = _decode_payload(
         await request.body(),
         content_type=content_type,
@@ -420,7 +428,7 @@ async def ingest_board_webhook(
         board_id=board.id,
         webhook_id=webhook.id,
         payload=payload_value,
-        headers=_captured_headers(request),
+        headers=headers,
         source_ip=request.client.host if request.client else None,
         content_type=content_type,
     )
@@ -438,12 +446,25 @@ async def ingest_board_webhook(
     )
     session.add(memory)
     await session.commit()
-    await _notify_lead_on_webhook_payload(
-        session=session,
-        board=board,
-        webhook=webhook,
-        payload=payload,
+
+    enqueued = enqueue_webhook_delivery(
+        QueuedWebhookDelivery(
+            board_id=board.id,
+            webhook_id=webhook.id,
+            payload_id=payload.id,
+            payload_event=_extract_webhook_event(headers),
+            received_at=payload.received_at,
+        ),
     )
+    if not enqueued:
+        # Preserve historical behavior by still notifying synchronously if queueing fails.
+        await _notify_lead_on_webhook_payload(
+            session=session,
+            board=board,
+            webhook=webhook,
+            payload=payload,
+        )
+
     return BoardWebhookIngestResponse(
         board_id=board.id,
         webhook_id=webhook.id,
