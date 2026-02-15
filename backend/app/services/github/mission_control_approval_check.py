@@ -79,12 +79,23 @@ async def _tasks_for_pr_url(
     board_id: UUID,
     pr_url: str,
 ) -> list[Task]:
+    """Return tasks whose `github_pr_url` custom field matches the PR URL.
+
+    NOTE: custom-field values are stored as JSON, and cross-dialect equality
+    semantics can be surprising. We therefore fetch candidate rows and perform a
+    strict Python-side string match.
+    """
+
     org_id = await _board_org_id(session, board_id=board_id)
     if org_id is None:
         return []
 
+    normalized = pr_url.strip()
+    if not normalized:
+        return []
+
     statement = (
-        select(Task)
+        select(Task, col(TaskCustomFieldValue.value))
         .join(TaskCustomFieldValue, col(TaskCustomFieldValue.task_id) == col(Task.id))
         .join(
             TaskCustomFieldDefinition,
@@ -94,11 +105,18 @@ async def _tasks_for_pr_url(
         .where(col(Task.board_id) == board_id)
         .where(col(TaskCustomFieldDefinition.organization_id) == org_id)
         .where(col(TaskCustomFieldDefinition.field_key) == "github_pr_url")
-        .where(col(TaskCustomFieldValue.value) == pr_url)
         .order_by(col(Task.created_at).asc())
     )
-    rows = list(await session.exec(statement))
-    return [row for row in rows if isinstance(row, Task)]
+    raw_rows = list(await session.exec(statement))
+    rows = cast(list[tuple[Task, object]], raw_rows)
+
+    tasks: list[Task] = []
+    for task, value in rows:
+        if not isinstance(task, Task):
+            continue
+        if isinstance(value, str) and value.strip() == normalized:
+            tasks.append(task)
+    return tasks
 
 
 async def _approval_rows_for_task(
