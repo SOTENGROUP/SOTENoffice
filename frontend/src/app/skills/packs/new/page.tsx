@@ -11,38 +11,40 @@ import { useCreateSkillPackApiV1SkillsPacksPost } from "@/api/generated/skills/s
 import { MarketplaceSkillForm } from "@/components/skills/MarketplaceSkillForm";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
+import { useTranslation } from "@/lib/i18n";
 
 export default function NewSkillPackPage() {
   const router = useRouter();
   const { isSignedIn } = useAuth();
   const { isAdmin } = useOrganizationMembership(isSignedIn);
+  const { t } = useTranslation();
 
   const createMutation = useCreateSkillPackApiV1SkillsPacksPost<ApiError>();
 
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to add skill packs.",
+        message: t("skills.signInPacks"),
         forceRedirectUrl: "/skills/packs/new",
       }}
-      title="Add skill pack"
-      description="Add a new skill URL pack for your organization."
+      title={t("skills.addPack")}
+      description={t("skills.addPackDesc")}
       isAdmin={isAdmin}
-      adminOnlyMessage="Only organization owners and admins can manage skill packs."
+      adminOnlyMessage={t("skills.packAdminOnly")}
       stickyHeader
     >
       <MarketplaceSkillForm
-        sourceLabel="Pack URL"
-        nameLabel="Pack name (optional)"
-        descriptionLabel="Pack description (optional)"
-        descriptionPlaceholder="Short summary shown in the packs list."
-        branchLabel="Pack branch (optional)"
-        branchPlaceholder="main"
+        sourceLabel={t("skills.packUrl")}
+        nameLabel={t("skills.packName")}
+        descriptionLabel={t("skills.packDescription")}
+        descriptionPlaceholder={t("skills.packDescPlaceholder")}
+        branchLabel={t("skills.packBranch")}
+        branchPlaceholder={t("skills.packBranchPlaceholder")}
         showBranch
-        requiredUrlMessage="Pack URL is required."
+        requiredUrlMessage={t("skills.packUrlRequired")}
         invalidUrlMessage="Pack URL must be a GitHub repository URL (https://github.com/<owner>/<repo>)."
-        submitLabel="Add pack"
-        submittingLabel="Adding..."
+        submitLabel={t("skills.addPackButton")}
+        submittingLabel={t("skills.addingPack")}
         isSubmitting={createMutation.isPending}
         onCancel={() => router.push("/skills/packs")}
         onSubmit={async (values) => {

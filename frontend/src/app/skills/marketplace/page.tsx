@@ -32,6 +32,7 @@ import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout"
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
 import { useUrlSorting } from "@/lib/use-url-sorting";
+import { useTranslation } from "@/lib/i18n";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -164,6 +165,7 @@ export default function SkillsMarketplacePage() {
   const searchParams = useSearchParams();
   const { isSignedIn } = useAuth();
   const { isAdmin } = useOrganizationMembership(isSignedIn);
+  const { t } = useTranslation();
   const [selectedSkill, setSelectedSkill] =
     useState<MarketplaceSkillCardRead | null>(null);
   const [gatewayInstalledById, setGatewayInstalledById] = useState<
@@ -769,10 +771,10 @@ export default function SkillsMarketplacePage() {
     <>
       <DashboardPageLayout
         signedOut={{
-          message: "Sign in to manage marketplace skills.",
+          message: t("skills.signInMarketplace"),
           forceRedirectUrl: "/skills/marketplace",
         }}
-        title="Skills Marketplace"
+        title={t("skills.marketplaceTitle")}
         description={
           selectedPack
             ? `${totalSkills} skill${
@@ -783,23 +785,23 @@ export default function SkillsMarketplacePage() {
               } synced from packs.`
         }
         isAdmin={isAdmin}
-        adminOnlyMessage="Only organization owners and admins can manage skills."
+        adminOnlyMessage={t("skills.marketplaceAdminOnly")}
         stickyHeader
       >
         <div className="space-y-6">
           {gateways.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
               <p className="font-medium text-slate-900">
-                No gateways available yet.
+                {t("skills.noGatewaysTitle")}
               </p>
               <p className="mt-2">
-                Create a gateway first, then return here to manage installs.
+                {t("skills.noGatewaysDesc")}
               </p>
               <Link
                 href="/gateways/new"
                 className={`${buttonVariants({ variant: "primary", size: "md" })} mt-4`}
               >
-                Create gateway
+                {t("skills.createGateway")}
               </Link>
             </div>
           ) : (
@@ -811,13 +813,13 @@ export default function SkillsMarketplacePage() {
                       htmlFor="marketplace-search"
                       className="mb-1 block text-sm font-medium text-slate-700"
                     >
-                      Search
+                      {t("common.search")}
                     </label>
                     <Input
                       id="marketplace-search"
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
-                      placeholder="Search by name, description, category, pack, source..."
+                      placeholder={t("skills.searchPlaceholder")}
                       type="search"
                     />
                   </div>
@@ -826,7 +828,7 @@ export default function SkillsMarketplacePage() {
                       htmlFor="marketplace-category-filter"
                       className="mb-1 block text-sm font-medium text-slate-700"
                     >
-                      Category
+                      {t("skills.categoryLabel")}
                     </label>
                     <Select
                       value={selectedCategory}
@@ -836,10 +838,10 @@ export default function SkillsMarketplacePage() {
                         id="marketplace-category-filter"
                         className="h-11"
                       >
-                        <SelectValue placeholder="All categories" />
+                        <SelectValue placeholder={t("skills.allCategories")} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All categories</SelectItem>
+                        <SelectItem value="all">{t("skills.allCategories")}</SelectItem>
                         {categoryFilterOptions.map((category) => (
                           <SelectItem
                             key={category.value}
@@ -856,7 +858,7 @@ export default function SkillsMarketplacePage() {
                       htmlFor="marketplace-risk-filter"
                       className="mb-1 block text-sm font-medium text-slate-700"
                     >
-                      Risk
+                      {t("skills.riskLabel")}
                     </label>
                     <Select
                       value={selectedRisk}
@@ -869,7 +871,7 @@ export default function SkillsMarketplacePage() {
                         <SelectValue placeholder="Safe" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All risks</SelectItem>
+                        <SelectItem value="all">{t("skills.allRisks")}</SelectItem>
                         {riskFilterOptions.map((risk) => (
                           <SelectItem key={risk} value={risk}>
                             {formatRiskLabel(risk)}
@@ -893,22 +895,21 @@ export default function SkillsMarketplacePage() {
                   isMutating={isMutating}
                   onSkillClick={setSelectedSkill}
                   emptyState={{
-                    title: "No marketplace skills yet",
-                    description:
-                      "Add packs first, then synced skills will appear here.",
+                    title: t("skills.noMarketplaceSkills"),
+                    description: t("skills.noMarketplaceSkillsDesc"),
                     actionHref: "/skills/packs/new",
-                    actionLabel: "Add your first pack",
+                    actionLabel: t("skills.addFirstPack"),
                   }}
                 />
               </div>
               <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
                 <div className="flex items-center gap-3">
                   <p>
-                    Showing {rangeStart}-{rangeEnd} of {totalSkills}
+                    {t("skills.showingRange")} {rangeStart}-{rangeEnd} of {totalSkills}
                   </p>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                      Rows
+                      {t("skills.rowsLabel")}
                     </span>
                     <Select
                       value={String(pageSize)}
@@ -949,7 +950,7 @@ export default function SkillsMarketplacePage() {
                       setCurrentPage((prev) => Math.max(1, prev - 1))
                     }
                   >
-                    Previous
+                    {t("skills.previous")}
                   </Button>
                   <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
                     {totalCountInfo.hasKnownTotal
@@ -969,7 +970,7 @@ export default function SkillsMarketplacePage() {
                       );
                     }}
                   >
-                    Next
+                    {t("skills.next")}
                   </Button>
                 </div>
               </div>

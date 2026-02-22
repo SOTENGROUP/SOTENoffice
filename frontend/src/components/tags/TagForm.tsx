@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { ApiError } from "@/api/mutator";
+import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,6 +60,7 @@ export function TagForm({
   submittingLabel,
   isSubmitting,
 }: TagFormProps) {
+  const { t } = useTranslation();
   const resolvedInitial = initialValues ?? DEFAULT_VALUES;
   const [name, setName] = useState(() => resolvedInitial.name);
   const [slug, setSlug] = useState(() => resolvedInitial.slug);
@@ -77,12 +79,12 @@ export function TagForm({
     event.preventDefault();
     const normalizedName = name.trim();
     if (!normalizedName) {
-      setErrorMessage("Tag name is required.");
+      setErrorMessage(t("tags.nameRequired"));
       return;
     }
     const normalizedSlug = slugify(slug.trim() || normalizedName);
     if (!normalizedSlug) {
-      setErrorMessage("Tag slug is required.");
+      setErrorMessage(t("tags.slugRequired"));
       return;
     }
     setErrorMessage(null);
@@ -94,7 +96,7 @@ export function TagForm({
         description: description.trim() || null,
       });
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, "Unable to save tag."));
+      setErrorMessage(extractErrorMessage(error, t("tags.saveFailed")));
     }
   };
 
@@ -108,19 +110,19 @@ export function TagForm({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Name
+                {t("tags.fieldName")}
               </label>
               <Input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. Backend"
+                placeholder={t("tags.namePlaceholder")}
                 disabled={isSubmitting}
               />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Slug
+                  {t("tags.fieldSlug")}
                 </label>
                 <button
                   type="button"
@@ -128,26 +130,26 @@ export function TagForm({
                   className="text-xs font-medium text-slate-500 underline underline-offset-2 transition hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!suggestedSlug || isSubmitting}
                 >
-                  Use from name
+                  {t("tags.useFromName")}
                 </button>
               </div>
               <Input
                 value={slug}
                 onChange={(event) => setSlug(event.target.value)}
-                placeholder="backend"
+                placeholder={t("tags.slugPlaceholder")}
                 disabled={isSubmitting}
               />
             </div>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Leave slug blank to auto-generate from the tag name.
+            {t("tags.slugHint")}
           </p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-[1fr_auto]">
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Color
+              {t("tags.fieldColor")}
             </label>
             <div className="flex items-center rounded-lg border border-slate-200 bg-white px-3">
               <span className="text-sm font-medium text-slate-400">#</span>
@@ -162,7 +164,7 @@ export function TagForm({
           </div>
           <div className="space-y-2">
             <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Preview
+              {t("tags.fieldPreview")}
             </label>
             <div className="inline-flex h-[42px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
               <span
@@ -178,12 +180,12 @@ export function TagForm({
 
         <div className="space-y-2">
           <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Description
+            {t("tags.fieldDescription")}
           </label>
           <Textarea
             value={description}
             onChange={(event) => setDescription(event.target.value)}
-            placeholder="Optional description"
+            placeholder={t("tags.descriptionPlaceholder")}
             className="min-h-[110px]"
             disabled={isSubmitting}
           />
@@ -203,7 +205,7 @@ export function TagForm({
           onClick={onCancel}
           disabled={isSubmitting}
         >
-          Cancel
+          {t("common.cancel")}
         </Button>
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting ? submittingLabel : submitLabel}

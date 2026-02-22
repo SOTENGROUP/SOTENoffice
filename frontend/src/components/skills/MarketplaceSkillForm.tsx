@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { ApiError } from "@/api/mutator";
+import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,24 +59,37 @@ export function MarketplaceSkillForm({
   initialValues,
   sourceUrlReadOnly = false,
   sourceUrlHelpText,
-  sourceLabel = "Skill URL",
-  sourcePlaceholder = "https://github.com/org/skill-repo",
-  nameLabel = "Name (optional)",
-  namePlaceholder = "Deploy Helper",
-  descriptionLabel = "Description (optional)",
-  descriptionPlaceholder = "Short summary shown in the marketplace.",
-  branchLabel = "Branch (optional)",
-  branchPlaceholder = "main",
+  sourceLabel,
+  sourcePlaceholder,
+  nameLabel,
+  namePlaceholder,
+  descriptionLabel,
+  descriptionPlaceholder,
+  branchLabel,
+  branchPlaceholder,
   defaultBranch = "main",
   showBranch = false,
-  requiredUrlMessage = "Skill URL is required.",
-  invalidUrlMessage = "Skill URL must be a GitHub repository URL (https://github.com/<owner>/<repo>).",
+  requiredUrlMessage,
+  invalidUrlMessage,
   submitLabel,
   submittingLabel,
   isSubmitting,
   onCancel,
   onSubmit,
 }: MarketplaceSkillFormProps) {
+  const { t } = useTranslation();
+
+  const resolvedSourceLabel = sourceLabel ?? t("skills.skillUrlLabel");
+  const resolvedSourcePlaceholder = sourcePlaceholder ?? t("skills.skillUrlPlaceholder");
+  const resolvedNameLabel = nameLabel ?? t("skills.skillNameLabel");
+  const resolvedNamePlaceholder = namePlaceholder ?? t("skills.skillNamePlaceholder");
+  const resolvedDescriptionLabel = descriptionLabel ?? t("skills.skillDescriptionLabel");
+  const resolvedDescriptionPlaceholder = descriptionPlaceholder ?? t("skills.skillDescriptionPlaceholder");
+  const resolvedBranchLabel = branchLabel ?? t("skills.skillBranchLabel");
+  const resolvedBranchPlaceholder = branchPlaceholder ?? t("skills.skillBranchPlaceholder");
+  const resolvedRequiredUrlMessage = requiredUrlMessage ?? t("skills.skillUrlRequired");
+  const resolvedInvalidUrlMessage = invalidUrlMessage ?? t("skills.skillUrlInvalid");
+
   const resolvedInitial = initialValues ?? DEFAULT_VALUES;
   const normalizedDefaultBranch = defaultBranch.trim() || "main";
   const [sourceUrl, setSourceUrl] = useState(resolvedInitial.sourceUrl);
@@ -112,12 +126,12 @@ export function MarketplaceSkillForm({
     event.preventDefault();
     const normalizedUrl = sourceUrl.trim();
     if (!normalizedUrl) {
-      setErrorMessage(requiredUrlMessage);
+      setErrorMessage(resolvedRequiredUrlMessage);
       return;
     }
 
     if (!isValidSourceUrl(normalizedUrl)) {
-      setErrorMessage(invalidUrlMessage);
+      setErrorMessage(resolvedInvalidUrlMessage);
       return;
     }
 
@@ -131,7 +145,7 @@ export function MarketplaceSkillForm({
         branch: branch.trim() || normalizedDefaultBranch,
       });
     } catch (error) {
-      setErrorMessage(extractErrorMessage(error, "Unable to save skill."));
+      setErrorMessage(extractErrorMessage(error, t("skills.saveFailed")));
     }
   };
 
@@ -146,14 +160,14 @@ export function MarketplaceSkillForm({
             htmlFor="source-url"
             className="text-xs font-semibold uppercase tracking-wider text-slate-500"
           >
-            {sourceLabel}
+            {resolvedSourceLabel}
           </label>
           <Input
             id="source-url"
             type="url"
             value={sourceUrl}
             onChange={(event) => setSourceUrl(event.target.value)}
-            placeholder={sourcePlaceholder}
+            placeholder={resolvedSourcePlaceholder}
             readOnly={sourceUrlReadOnly}
             disabled={isSubmitting || sourceUrlReadOnly}
           />
@@ -168,13 +182,13 @@ export function MarketplaceSkillForm({
               htmlFor="skill-branch"
               className="text-xs font-semibold uppercase tracking-wider text-slate-500"
             >
-              {branchLabel}
+              {resolvedBranchLabel}
             </label>
             <Input
               id="skill-branch"
               value={branch}
               onChange={(event) => setBranch(event.target.value)}
-              placeholder={branchPlaceholder}
+              placeholder={resolvedBranchPlaceholder}
               disabled={isSubmitting}
             />
           </div>
@@ -185,13 +199,13 @@ export function MarketplaceSkillForm({
             htmlFor="skill-name"
             className="text-xs font-semibold uppercase tracking-wider text-slate-500"
           >
-            {nameLabel}
+            {resolvedNameLabel}
           </label>
           <Input
             id="skill-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder={namePlaceholder}
+            placeholder={resolvedNamePlaceholder}
             disabled={isSubmitting}
           />
         </div>
@@ -201,13 +215,13 @@ export function MarketplaceSkillForm({
             htmlFor="skill-description"
             className="text-xs font-semibold uppercase tracking-wider text-slate-500"
           >
-            {descriptionLabel}
+            {resolvedDescriptionLabel}
           </label>
           <Textarea
             id="skill-description"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
-            placeholder={descriptionPlaceholder}
+            placeholder={resolvedDescriptionPlaceholder}
             className="min-h-[120px]"
             disabled={isSubmitting}
           />
@@ -227,7 +241,7 @@ export function MarketplaceSkillForm({
           onClick={onCancel}
           disabled={isSubmitting}
         >
-          Cancel
+          {t("common.cancel")}
         </Button>
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting ? submittingLabel : submitLabel}

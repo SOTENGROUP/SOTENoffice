@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DEFAULT_IDENTITY_PROFILE } from "@/lib/agent-templates";
+import { useTranslation } from "@/lib/i18n";
 
 type IdentityProfile = {
   role: string;
@@ -36,17 +37,17 @@ type IdentityProfile = {
   emoji: string;
 };
 
-const EMOJI_OPTIONS = [
-  { value: ":gear:", label: "Gear", glyph: "⚙️" },
-  { value: ":sparkles:", label: "Sparkles", glyph: "✨" },
-  { value: ":rocket:", label: "Rocket", glyph: "🚀" },
-  { value: ":megaphone:", label: "Megaphone", glyph: "📣" },
-  { value: ":chart_with_upwards_trend:", label: "Growth", glyph: "📈" },
-  { value: ":bulb:", label: "Idea", glyph: "💡" },
-  { value: ":wrench:", label: "Builder", glyph: "🔧" },
-  { value: ":shield:", label: "Shield", glyph: "🛡️" },
-  { value: ":memo:", label: "Notes", glyph: "📝" },
-  { value: ":brain:", label: "Brain", glyph: "🧠" },
+const EMOJI_BASE_OPTIONS = [
+  { value: ":gear:", labelKey: "emojiGear" as const, glyph: "⚙️" },
+  { value: ":sparkles:", labelKey: "emojiSparkles" as const, glyph: "✨" },
+  { value: ":rocket:", labelKey: "emojiRocket" as const, glyph: "🚀" },
+  { value: ":megaphone:", labelKey: "emojiMegaphone" as const, glyph: "📣" },
+  { value: ":chart_with_upwards_trend:", labelKey: "emojiGrowth" as const, glyph: "📈" },
+  { value: ":bulb:", labelKey: "emojiIdea" as const, glyph: "💡" },
+  { value: ":wrench:", labelKey: "emojiBuilder" as const, glyph: "🔧" },
+  { value: ":shield:", labelKey: "emojiShield" as const, glyph: "🛡️" },
+  { value: ":memo:", labelKey: "emojiNotes" as const, glyph: "📝" },
+  { value: ":brain:", labelKey: "emojiBrain" as const, glyph: "🧠" },
 ];
 
 const getBoardOptions = (boards: BoardRead[]): SearchableSelectOption[] =>
@@ -70,6 +71,7 @@ const normalizeIdentityProfile = (
 export default function NewAgentPage() {
   const router = useRouter();
   const { isSignedIn } = useAuth();
+  const { t } = useTranslation();
 
   const { isAdmin } = useOrganizationMembership(isSignedIn);
 
@@ -115,12 +117,12 @@ export default function NewAgentPage() {
     if (!isSignedIn) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      setError("Agent name is required.");
+      setError(t("agents.agentNameRequired"));
       return;
     }
     const resolvedBoardId = displayBoardId;
     if (!resolvedBoardId) {
-      setError("Select a board before creating an agent.");
+      setError(t("agents.selectBoardRequired"));
       return;
     }
     setError(null);
@@ -143,14 +145,14 @@ export default function NewAgentPage() {
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to create an agent.",
+        message: t("agents.signInCreate"),
         forceRedirectUrl: "/agents/new",
         signUpForceRedirectUrl: "/agents/new",
       }}
-      title="Create agent"
-      description="Agents start in provisioning until they check in."
+      title={t("agents.createTitle")}
+      description={t("agents.createDesc")}
       isAdmin={isAdmin}
-      adminOnlyMessage="Only organization owners and admins can create agents."
+      adminOnlyMessage={t("agents.adminOnlyCreate")}
     >
       <form
         onSubmit={handleSubmit}
@@ -158,24 +160,24 @@ export default function NewAgentPage() {
       >
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Basic configuration
+            {t("agents.basicConfig")}
           </p>
           <div className="mt-4 space-y-6">
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-900">
-                  Agent name <span className="text-red-500">*</span>
+                  {t("agents.agentName")} <span className="text-red-500">*</span>
                 </label>
                 <Input
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="e.g. Deploy bot"
+                  placeholder={t("agents.agentNamePlaceholder")}
                   disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-900">
-                  Role
+                  {t("common.role")}
                 </label>
                 <Input
                   value={identityProfile.role}
@@ -185,7 +187,7 @@ export default function NewAgentPage() {
                       role: event.target.value,
                     }))
                   }
-                  placeholder="e.g. Founder, Social Media Manager"
+                  placeholder={t("agents.rolePlaceholder")}
                   disabled={isLoading}
                 />
               </div>
@@ -193,16 +195,16 @@ export default function NewAgentPage() {
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-900">
-                  Board <span className="text-red-500">*</span>
+                  {t("boards.board")} <span className="text-red-500">*</span>
                 </label>
                 <SearchableSelect
-                  ariaLabel="Select board"
+                  ariaLabel={t("agents.selectBoard")}
                   value={displayBoardId}
                   onValueChange={setBoardId}
                   options={getBoardOptions(boards)}
-                  placeholder="Select board"
-                  searchPlaceholder="Search boards..."
-                  emptyMessage="No matching boards."
+                  placeholder={t("agents.selectBoard")}
+                  searchPlaceholder={t("agents.searchBoards")}
+                  emptyMessage={t("agents.noMatchingBoards")}
                   triggerClassName="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                   contentClassName="rounded-xl border border-slate-200 shadow-lg"
                   itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
@@ -210,13 +212,13 @@ export default function NewAgentPage() {
                 />
                 {boards.length === 0 ? (
                   <p className="text-xs text-slate-500">
-                    Create a board before adding agents.
+                    {t("agents.createBoardFirst")}
                   </p>
                 ) : null}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-900">
-                  Emoji
+                  {t("agents.emoji")}
                 </label>
                 <Select
                   value={identityProfile.emoji}
@@ -229,12 +231,12 @@ export default function NewAgentPage() {
                   disabled={isLoading}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select emoji" />
+                    <SelectValue placeholder={t("agents.selectEmoji")} />
                   </SelectTrigger>
                   <SelectContent>
-                    {EMOJI_OPTIONS.map((option) => (
+                    {EMOJI_BASE_OPTIONS.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
-                        {option.glyph} {option.label}
+                        {option.glyph} {t(`agents.${option.labelKey}`)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -246,12 +248,12 @@ export default function NewAgentPage() {
 
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Personality & behavior
+            {t("agents.personality")}
           </p>
           <div className="mt-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-900">
-                Communication style
+                {t("agents.commStyle")}
               </label>
               <Input
                 value={identityProfile.communication_style}
@@ -269,21 +271,21 @@ export default function NewAgentPage() {
 
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Schedule & notifications
+            {t("agents.schedule")}
           </p>
           <div className="mt-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-900">
-                Interval
+                {t("agents.interval")}
               </label>
               <Input
                 value={heartbeatEvery}
                 onChange={(event) => setHeartbeatEvery(event.target.value)}
-                placeholder="e.g. 10m"
+                placeholder={t("agents.intervalPlaceholder")}
                 disabled={isLoading}
               />
               <p className="text-xs text-slate-500">
-                How often this agent runs HEARTBEAT.md (10m, 30m, 2h).
+                {t("agents.intervalDesc")}
               </p>
             </div>
           </div>
@@ -297,14 +299,14 @@ export default function NewAgentPage() {
 
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={isLoading}>
-            {isLoading ? "Creating…" : "Create agent"}
+            {isLoading ? t("agents.creating") : t("agents.createTitle")}
           </Button>
           <Button
             variant="outline"
             type="button"
             onClick={() => router.push("/agents")}
           >
-            Back to agents
+            {t("agents.backToAgents")}
           </Button>
         </div>
       </form>

@@ -33,6 +33,7 @@ import { type AgentRead } from "@/api/generated/model";
 import { formatTimestamp } from "@/lib/formatters";
 import { createOptimisticListDeleteMutation } from "@/lib/list-delete";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
+import { useTranslation } from "@/lib/i18n";
 
 const maskToken = (value?: string | null) => {
   if (!value) return "—";
@@ -45,6 +46,7 @@ export default function GatewayDetailPage() {
   const queryClient = useQueryClient();
   const params = useParams();
   const { isSignedIn } = useAuth();
+  const { t } = useTranslation();
   const gatewayIdParam = params?.gatewayId;
   const gatewayId = Array.isArray(gatewayIdParam)
     ? gatewayIdParam[0]
@@ -148,8 +150,8 @@ export default function GatewayDetailPage() {
   const isConnected = status?.connected ?? false;
 
   const title = useMemo(
-    () => (gateway?.name ? gateway.name : "Gateway"),
-    [gateway?.name],
+    () => (gateway?.name ? gateway.name : t("gateways.gateway")),
+    [gateway?.name, t],
   );
   const handleDelete = () => {
     if (!deleteTarget) return;
@@ -160,31 +162,31 @@ export default function GatewayDetailPage() {
     <>
       <DashboardPageLayout
         signedOut={{
-          message: "Sign in to view a gateway.",
+          message: t("gateways.signInView"),
           forceRedirectUrl: `/gateways/${gatewayId}`,
         }}
         title={title}
-        description="Gateway configuration and connection details."
+        description={t("gateways.detailDesc")}
         headerActions={
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => router.push("/gateways")}>
-              Back to gateways
+              {t("gateways.backToGateways")}
             </Button>
             {isAdmin && gatewayId ? (
               <Button
                 onClick={() => router.push(`/gateways/${gatewayId}/edit`)}
               >
-                Edit gateway
+                {t("gateways.editGateway")}
               </Button>
             ) : null}
           </div>
         }
         isAdmin={isAdmin}
-        adminOnlyMessage="Only organization owners and admins can access gateways."
+        adminOnlyMessage={t("gateways.adminOnly")}
       >
         {gatewayQuery.isLoading ? (
           <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-            Loading gateway…
+            {t("gateways.loadingGateway")}
           </div>
         ) : gatewayQuery.error ? (
           <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
@@ -196,7 +198,7 @@ export default function GatewayDetailPage() {
               <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Connection
+                    {t("gateways.connection")}
                   </p>
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <span
@@ -210,24 +212,26 @@ export default function GatewayDetailPage() {
                     />
                     <span>
                       {statusQuery.isLoading
-                        ? "Checking"
+                        ? t("gateways.checking")
                         : isConnected
-                          ? "Online"
-                          : "Offline"}
+                          ? t("gateways.online")
+                          : t("gateways.offline")}
                     </span>
                   </div>
                 </div>
                 <div className="mt-4 space-y-3 text-sm text-slate-700">
                   <div>
                     <p className="text-xs uppercase text-slate-400">
-                      Gateway URL
+                      {t("gateways.gatewayUrl")}
                     </p>
                     <p className="mt-1 text-sm font-medium text-slate-900">
                       {gateway.url}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs uppercase text-slate-400">Token</p>
+                    <p className="text-xs uppercase text-slate-400">
+                      {t("gateways.token")}
+                    </p>
                     <p className="mt-1 text-sm font-medium text-slate-900">
                       {maskToken(gateway.token)}
                     </p>
@@ -237,12 +241,12 @@ export default function GatewayDetailPage() {
 
               <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Runtime
+                  {t("gateways.runtime")}
                 </p>
                 <div className="mt-4 space-y-3 text-sm text-slate-700">
                   <div>
                     <p className="text-xs uppercase text-slate-400">
-                      Workspace root
+                      {t("gateways.workspaceRoot")}
                     </p>
                     <p className="mt-1 text-sm font-medium text-slate-900">
                       {gateway.workspace_root}
@@ -251,7 +255,7 @@ export default function GatewayDetailPage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
                       <p className="text-xs uppercase text-slate-400">
-                        Created
+                        {t("common.created")}
                       </p>
                       <p className="mt-1 text-sm font-medium text-slate-900">
                         {formatTimestamp(gateway.created_at)}
@@ -259,7 +263,7 @@ export default function GatewayDetailPage() {
                     </div>
                     <div>
                       <p className="text-xs uppercase text-slate-400">
-                        Updated
+                        {t("common.updated")}
                       </p>
                       <p className="mt-1 text-sm font-medium text-slate-900">
                         {formatTimestamp(gateway.updated_at)}
@@ -273,13 +277,15 @@ export default function GatewayDetailPage() {
             <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Agents
+                  {t("gateways.agents")}
                 </p>
                 {agentsQuery.isLoading ? (
-                  <span className="text-xs text-slate-500">Loading…</span>
+                  <span className="text-xs text-slate-500">
+                    {t("common.loading")}
+                  </span>
                 ) : (
                   <span className="text-xs text-slate-500">
-                    {agents.length} total
+                    {agents.length} {t("common.total")}
                   </span>
                 )}
               </div>
@@ -289,7 +295,7 @@ export default function GatewayDetailPage() {
                   boards={boards}
                   isLoading={agentsQuery.isLoading}
                   onDelete={setDeleteTarget}
-                  emptyMessage="No agents assigned to this gateway."
+                  emptyMessage={t("gateways.noAgentsAssigned")}
                 />
               </div>
             </div>
@@ -304,11 +310,13 @@ export default function GatewayDetailPage() {
             setDeleteTarget(null);
           }
         }}
-        ariaLabel="Delete agent"
-        title="Delete agent"
+        ariaLabel={t("gateways.deleteAgent")}
+        title={t("gateways.deleteAgent")}
         description={
           <>
-            This will remove {deleteTarget?.name}. This action cannot be undone.
+            {t("gateways.deleteAgentConfirmPrefix")}{" "}
+            <strong>{deleteTarget?.name}</strong>
+            {t("gateways.deleteAgentConfirmSuffix")}
           </>
         }
         errorMessage={deleteMutation.error?.message}

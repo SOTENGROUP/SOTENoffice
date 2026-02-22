@@ -45,6 +45,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useTranslation } from "@/lib/i18n";
 
 export default function AgentDetailPage() {
   const { isSignedIn } = useAuth();
@@ -52,6 +53,7 @@ export default function AgentDetailPage() {
   const params = useParams();
   const agentIdParam = params?.agentId;
   const agentId = Array.isArray(agentIdParam) ? agentIdParam[0] : agentIdParam;
+  const { t } = useTranslation();
 
   const { isAdmin } = useOrganizationMembership(isSignedIn);
 
@@ -149,13 +151,13 @@ export default function AgentDetailPage() {
     <DashboardShell>
       <SignedOut>
         <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl surface-panel p-10 text-center">
-          <p className="text-sm text-muted">Sign in to view agents.</p>
+          <p className="text-sm text-muted">{t("agents.signInView")}</p>
           <SignInButton
             mode="modal"
             forceRedirectUrl="/agents"
             signUpForceRedirectUrl="/agents"
           >
-            <Button>Sign in</Button>
+            <Button>{t("common.signInRequired")}</Button>
           </SignInButton>
         </div>
       </SignedOut>
@@ -164,7 +166,7 @@ export default function AgentDetailPage() {
         {!isAdmin ? (
           <div className="flex h-full flex-col gap-6 rounded-2xl surface-panel p-8">
             <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)] px-6 py-5 text-sm text-muted">
-              Only organization owners and admins can access agents.
+              {t("agents.adminOnly")}
             </div>
           </div>
         ) : (
@@ -172,13 +174,13 @@ export default function AgentDetailPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-quiet">
-                  Agents
+                  {t("menu.agents")}
                 </p>
                 <h1 className="text-2xl font-semibold text-strong">
-                  {agent?.name ?? "Agent"}
+                  {agent?.name ?? t("agents.agent")}
                 </h1>
                 <p className="text-sm text-muted">
-                  Review agent health, session binding, and recent activity.
+                  {t("agents.reviewDesc")}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -186,19 +188,19 @@ export default function AgentDetailPage() {
                   variant="outline"
                   onClick={() => router.push("/agents")}
                 >
-                  Back to agents
+                  {t("agents.backToAgents")}
                 </Button>
                 {agent ? (
                   <Link
                     href={`/agents/${agent.id}/edit`}
                     className="inline-flex h-10 items-center justify-center rounded-xl border border-[color:var(--border)] px-4 text-sm font-semibold text-muted transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent)]"
                   >
-                    Edit
+                    {t("common.edit")}
                   </Link>
                 ) : null}
                 {agent ? (
                   <Button variant="outline" onClick={() => setDeleteOpen(true)}>
-                    Delete
+                    {t("common.delete")}
                   </Button>
                 ) : null}
               </div>
@@ -212,7 +214,7 @@ export default function AgentDetailPage() {
 
             {isLoading ? (
               <div className="flex flex-1 items-center justify-center text-sm text-muted">
-                Loading agent details…
+                {t("agents.loadingDetails")}
               </div>
             ) : agent ? (
               <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
@@ -221,7 +223,7 @@ export default function AgentDetailPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Overview
+                          {t("agents.overview")}
                         </p>
                         <p className="mt-1 text-lg font-semibold text-strong">
                           {agent.name}
@@ -232,13 +234,13 @@ export default function AgentDetailPage() {
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Agent ID
+                          {t("agents.agentId")}
                         </p>
                         <p className="mt-1 text-sm text-muted">{agent.id}</p>
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Session key
+                          {t("agents.sessionKey")}
                         </p>
                         <p className="mt-1 text-sm text-muted">
                           {agent.openclaw_session_id ?? "—"}
@@ -246,11 +248,11 @@ export default function AgentDetailPage() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Board
+                          {t("boards.board")}
                         </p>
                         {agent.is_gateway_main ? (
                           <p className="mt-1 text-sm text-strong">
-                            Gateway main (no board)
+                            {t("agents.gatewayMain")}
                           </p>
                         ) : linkedBoard ? (
                           <Link
@@ -265,7 +267,7 @@ export default function AgentDetailPage() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Last seen
+                          {t("agents.lastSeen")}
                         </p>
                         <p className="mt-1 text-sm text-strong">
                           {formatRelative(agent.last_seen_at)}
@@ -276,7 +278,7 @@ export default function AgentDetailPage() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Updated
+                          {t("common.updated")}
                         </p>
                         <p className="mt-1 text-sm text-muted">
                           {formatTimestamp(agent.updated_at)}
@@ -284,7 +286,7 @@ export default function AgentDetailPage() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                          Created
+                          {t("common.created")}
                         </p>
                         <p className="mt-1 text-sm text-muted">
                           {formatTimestamp(agent.created_at)}
@@ -296,23 +298,23 @@ export default function AgentDetailPage() {
                   <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                        Health
+                        {t("agents.health")}
                       </p>
                       <StatusPill status={agentStatus} />
                     </div>
                     <div className="mt-4 grid gap-3 text-sm text-muted">
                       <div className="flex items-center justify-between">
-                        <span>Heartbeat window</span>
+                        <span>{t("agents.heartbeatWindow")}</span>
                         <span>{formatRelative(agent.last_seen_at)}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Session binding</span>
+                        <span>{t("agents.sessionBinding")}</span>
                         <span>
-                          {agent.openclaw_session_id ? "Bound" : "Unbound"}
+                          {agent.openclaw_session_id ? t("agents.bound") : t("agents.unbound")}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Status</span>
+                        <span>{t("common.status")}</span>
                         <span className="text-strong">{agentStatus}</span>
                       </div>
                     </div>
@@ -322,16 +324,16 @@ export default function AgentDetailPage() {
                 <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface-muted)] p-5">
                   <div className="mb-4 flex items-center justify-between">
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-quiet">
-                      Activity
+                      {t("agents.activitySection")}
                     </p>
                     <p className="text-xs text-quiet">
-                      {agentEvents.length} events
+                      {agentEvents.length} {t("agents.events")}
                     </p>
                   </div>
                   <div className="space-y-3">
                     {agentEvents.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-[color:var(--border)] bg-[color:var(--surface)] p-4 text-sm text-muted">
-                        No activity yet for this agent.
+                        {t("agents.noActivity")}
                       </div>
                     ) : (
                       agentEvents.map((event) => (
@@ -362,7 +364,7 @@ export default function AgentDetailPage() {
               </div>
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-muted">
-                Agent not found.
+                {t("agents.agentNotFound")}
               </div>
             )}
           </div>
@@ -370,11 +372,11 @@ export default function AgentDetailPage() {
       </SignedIn>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent aria-label="Delete agent">
+        <DialogContent aria-label={t("agents.deleteAgent")}>
           <DialogHeader>
-            <DialogTitle>Delete agent</DialogTitle>
+            <DialogTitle>{t("agents.deleteAgent")}</DialogTitle>
             <DialogDescription>
-              This will remove {agent?.name}. This action cannot be undone.
+              {t("agents.deleteConfirm")}
             </DialogDescription>
           </DialogHeader>
           {deleteError ? (
@@ -384,10 +386,10 @@ export default function AgentDetailPage() {
           ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button onClick={handleDelete} disabled={isDeleting}>
-              {isDeleting ? "Deleting…" : "Delete"}
+              {isDeleting ? t("common.deleting") : t("common.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>

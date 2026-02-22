@@ -16,6 +16,7 @@ import {
 import { TagForm } from "@/components/tags/TagForm";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
+import { useTranslation } from "@/lib/i18n";
 
 export default function EditTagPage() {
   const router = useRouter();
@@ -24,6 +25,7 @@ export default function EditTagPage() {
   const tagId = Array.isArray(tagIdParam) ? tagIdParam[0] : tagIdParam;
   const { isSignedIn } = useAuth();
   const { isAdmin } = useOrganizationMembership(isSignedIn);
+  const { t } = useTranslation();
 
   const tagQuery = useGetTagApiV1TagsTagIdGet<
     getTagApiV1TagsTagIdGetResponse,
@@ -50,18 +52,18 @@ export default function EditTagPage() {
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to edit tags.",
+        message: t("tags.signInEdit"),
         forceRedirectUrl: `/tags/${tagId ?? ""}/edit`,
         signUpForceRedirectUrl: `/tags/${tagId ?? ""}/edit`,
       }}
-      title={tag ? `Edit ${tag.name}` : "Edit tag"}
-      description="Update tag details used across task boards."
+      title={tag ? `${t("tags.editTag")} ${tag.name}` : t("tags.editTag")}
+      description={t("tags.editDesc")}
       isAdmin={isAdmin}
-      adminOnlyMessage="Only organization owners and admins can manage tags."
+      adminOnlyMessage={t("tags.adminOnly")}
     >
       {tagQuery.isLoading ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-          Loading tag…
+          {t("tags.loadingTag")}
         </div>
       ) : tagQuery.error ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700 shadow-sm">
@@ -69,7 +71,7 @@ export default function EditTagPage() {
         </div>
       ) : !tag ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-          Tag not found.
+          {t("tags.tagNotFound")}
         </div>
       ) : (
         <TagForm
@@ -80,8 +82,8 @@ export default function EditTagPage() {
             description: tag.description ?? "",
           }}
           isSubmitting={updateMutation.isPending}
-          submitLabel="Save changes"
-          submittingLabel="Saving…"
+          submitLabel={t("tags.saveChanges")}
+          submittingLabel={t("tags.savingChanges")}
           onCancel={() => router.push("/tags")}
           onSubmit={async (values) => {
             const result = await updateMutation.mutateAsync({

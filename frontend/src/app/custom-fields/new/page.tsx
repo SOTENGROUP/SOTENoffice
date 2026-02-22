@@ -25,12 +25,14 @@ import {
 } from "@/components/custom-fields/custom-field-form-utils";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
+import { useTranslation } from "@/lib/i18n";
 
 export default function NewCustomFieldPage() {
   const router = useRouter();
   const { isSignedIn } = useAuth();
   const { isAdmin } = useOrganizationMembership(isSignedIn);
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
   const boardsQuery = useListBoardsApiV1BoardsGet<
     listBoardsApiV1BoardsGetResponse,
@@ -70,14 +72,14 @@ export default function NewCustomFieldPage() {
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to manage custom fields.",
+        message: t("customFields.signInCreate"),
         forceRedirectUrl: "/custom-fields",
         signUpForceRedirectUrl: "/custom-fields",
       }}
-      title="Add custom field"
-      description="Create an organization-level custom field and bind it to one or more boards."
+      title={t("customFields.createTitle")}
+      description={t("customFields.createDesc")}
       isAdmin={isAdmin}
-      adminOnlyMessage="Only organization owners and admins can manage custom fields."
+      adminOnlyMessage={t("customFields.adminOnly")}
       stickyHeader
     >
       <CustomFieldForm
@@ -87,8 +89,8 @@ export default function NewCustomFieldPage() {
         boardsLoading={boardsQuery.isLoading}
         boardsError={boardsQuery.error?.message ?? null}
         isSubmitting={createMutation.isPending}
-        submitLabel="Create field"
-        submittingLabel="Creating..."
+        submitLabel={t("customFields.createField")}
+        submittingLabel={t("customFields.creating")}
         submitErrorFallback="Failed to create custom field."
         onSubmit={handleSubmit}
       />

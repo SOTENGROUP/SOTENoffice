@@ -2,6 +2,7 @@ import type { FormEvent } from "react";
 import { CheckCircle2, RefreshCcw, XCircle } from "lucide-react";
 
 import type { GatewayCheckStatus } from "@/lib/gateway-form";
+import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -52,6 +53,8 @@ export function GatewayForm({
   onGatewayTokenChange,
   onWorkspaceRootChange,
 }: GatewayFormProps) {
+  const { t } = useTranslation();
+
   return (
     <form
       onSubmit={onSubmit}
@@ -59,12 +62,12 @@ export function GatewayForm({
     >
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-900">
-          Gateway name <span className="text-red-500">*</span>
+          {t("gateways.gatewayName")} <span className="text-red-500">*</span>
         </label>
         <Input
           value={name}
           onChange={(event) => onNameChange(event.target.value)}
-          placeholder="Primary gateway"
+          placeholder={t("gateways.gatewayNamePlaceholder")}
           disabled={isLoading}
         />
       </div>
@@ -72,7 +75,7 @@ export function GatewayForm({
       <div className="grid gap-6 md:grid-cols-2">
         <div className="space-y-2">
           <label className="text-sm font-medium text-slate-900">
-            Gateway URL <span className="text-red-500">*</span>
+            {t("gateways.gatewayUrl")} <span className="text-red-500">*</span>
           </label>
           <div className="relative">
             <Input
@@ -87,7 +90,7 @@ export function GatewayForm({
               type="button"
               onClick={() => void onRunGatewayCheck()}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              aria-label="Check gateway connection"
+              aria-label={t("gateways.checkConnection")}
             >
               {gatewayCheckStatus === "checking" ? (
                 <RefreshCcw className="h-4 w-4 animate-spin" />
@@ -116,13 +119,13 @@ export function GatewayForm({
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium text-slate-900">
-            Gateway token
+            {t("gateways.gatewayToken")}
           </label>
           <Input
             value={gatewayToken}
             onChange={(event) => onGatewayTokenChange(event.target.value)}
             onBlur={onRunGatewayCheck}
-            placeholder="Bearer token"
+            placeholder={t("gateways.tokenPlaceholder")}
             disabled={isLoading}
           />
         </div>
@@ -130,7 +133,7 @@ export function GatewayForm({
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-900">
-          Workspace root <span className="text-red-500">*</span>
+          {t("gateways.workspaceRoot")} <span className="text-red-500">*</span>
         </label>
         <Input
           value={workspaceRoot}

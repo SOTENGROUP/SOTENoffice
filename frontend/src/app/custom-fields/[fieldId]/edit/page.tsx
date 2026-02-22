@@ -29,6 +29,7 @@ import {
   type NormalizedCustomFieldFormValues,
 } from "@/components/custom-fields/custom-field-form-utils";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
+import { useTranslation } from "@/lib/i18n";
 
 export default function EditCustomFieldPage() {
   const router = useRouter();
@@ -39,6 +40,7 @@ export default function EditCustomFieldPage() {
   const { isSignedIn } = useAuth();
   const { isAdmin } = useOrganizationMembership(isSignedIn);
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
   const customFieldsQuery =
     useListOrgCustomFieldsApiV1OrganizationsMeCustomFieldsGet<
@@ -86,17 +88,17 @@ export default function EditCustomFieldPage() {
     getListOrgCustomFieldsApiV1OrganizationsMeCustomFieldsGetQueryKey();
 
   const loadError = useMemo(() => {
-    if (!fieldId) return "Missing custom field id.";
+    if (!fieldId) return t("customFields.missingId");
     if (customFieldsQuery.error) {
       return extractApiErrorMessage(
         customFieldsQuery.error,
-        "Failed to load custom field.",
+        t("customFields.loadFailed"),
       );
     }
     if (!customFieldsQuery.isLoading && !field)
-      return "Custom field not found.";
+      return t("customFields.fieldNotFound");
     return null;
-  }, [customFieldsQuery.error, customFieldsQuery.isLoading, field, fieldId]);
+  }, [customFieldsQuery.error, customFieldsQuery.isLoading, field, fieldId, t]);
 
   const handleSubmit = async (values: NormalizedCustomFieldFormValues) => {
     if (!fieldId || !field) return;
@@ -104,7 +106,7 @@ export default function EditCustomFieldPage() {
     const updates: TaskCustomFieldDefinitionUpdate =
       buildCustomFieldUpdatePayload(field, values);
     if (Object.keys(updates).length === 0) {
-      throw new Error("No changes were made.");
+      throw new Error(t("customFields.noChanges"));
     }
 
     await updateMutation.mutateAsync({
@@ -118,19 +120,19 @@ export default function EditCustomFieldPage() {
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to manage custom fields.",
+        message: t("customFields.signInEdit"),
         forceRedirectUrl: "/custom-fields",
         signUpForceRedirectUrl: "/custom-fields",
       }}
-      title="Edit custom field"
-      description="Update custom-field metadata and board bindings."
+      title={t("customFields.editTitle")}
+      description={t("customFields.editDesc")}
       isAdmin={isAdmin}
-      adminOnlyMessage="Only organization owners and admins can manage custom fields."
+      adminOnlyMessage={t("customFields.adminOnly")}
       stickyHeader
     >
       {customFieldsQuery.isLoading ? (
         <div className="max-w-3xl rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-          Loading custom field…
+          {t("customFields.loadingField")}
         </div>
       ) : null}
       {!customFieldsQuery.isLoading && loadError ? (
@@ -148,8 +150,8 @@ export default function EditCustomFieldPage() {
           boardsLoading={boardsQuery.isLoading}
           boardsError={boardsQuery.error?.message ?? null}
           isSubmitting={updateMutation.isPending}
-          submitLabel="Save changes"
-          submittingLabel="Saving..."
+          submitLabel={t("customFields.saveChanges")}
+          submittingLabel={t("customFields.savingChanges")}
           submitErrorFallback="Failed to update custom field."
           onSubmit={handleSubmit}
         />

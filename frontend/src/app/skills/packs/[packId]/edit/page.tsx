@@ -15,12 +15,14 @@ import {
 import { MarketplaceSkillForm } from "@/components/skills/MarketplaceSkillForm";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
+import { useTranslation } from "@/lib/i18n";
 
 export default function EditSkillPackPage() {
   const router = useRouter();
   const params = useParams();
   const { isSignedIn } = useAuth();
   const { isAdmin } = useOrganizationMembership(isSignedIn);
+  const { t } = useTranslation();
 
   const packIdParam = params?.packId;
   const packId = Array.isArray(packIdParam) ? packIdParam[0] : packIdParam;
@@ -44,18 +46,18 @@ export default function EditSkillPackPage() {
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to edit skill packs.",
+        message: t("skills.signInEditPack"),
         forceRedirectUrl: `/skills/packs/${packId ?? ""}/edit`,
       }}
-      title={pack ? `Edit ${pack.name}` : "Edit skill pack"}
-      description="Update skill URL pack details."
+      title={pack ? `${t("skills.editPack")} ${pack.name}` : t("skills.editPack")}
+      description={t("skills.editPackDesc")}
       isAdmin={isAdmin}
-      adminOnlyMessage="Only organization owners and admins can manage skill packs."
+      adminOnlyMessage={t("skills.packAdminOnly")}
       stickyHeader
     >
       {packQuery.isLoading ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-          Loading pack...
+          {t("skills.loadingPack")}
         </div>
       ) : packQuery.error ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700 shadow-sm">
@@ -63,7 +65,7 @@ export default function EditSkillPackPage() {
         </div>
       ) : !pack ? (
         <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-          Pack not found.
+          {t("skills.packNotFound")}
         </div>
       ) : (
         <MarketplaceSkillForm
@@ -74,17 +76,17 @@ export default function EditSkillPackPage() {
             description: pack.description ?? "",
             branch: pack.branch || "main",
           }}
-          sourceLabel="Pack URL"
-          nameLabel="Pack name (optional)"
-          descriptionLabel="Pack description (optional)"
-          branchLabel="Pack branch (optional)"
-          branchPlaceholder="main"
+          sourceLabel={t("skills.packUrl")}
+          nameLabel={t("skills.packName")}
+          descriptionLabel={t("skills.packDescription")}
+          branchLabel={t("skills.packBranch")}
+          branchPlaceholder={t("skills.packBranchPlaceholder")}
           showBranch
-          descriptionPlaceholder="Short summary shown in the packs list."
-          requiredUrlMessage="Pack URL is required."
+          descriptionPlaceholder={t("skills.packDescPlaceholder")}
+          requiredUrlMessage={t("skills.packUrlRequired")}
           invalidUrlMessage="Pack URL must be a GitHub repository URL (https://github.com/<owner>/<repo>)."
-          submitLabel="Save changes"
-          submittingLabel="Saving..."
+          submitLabel={t("skills.saveChanges")}
+          submittingLabel={t("skills.savingChanges")}
           isSubmitting={saveMutation.isPending}
           onCancel={() => router.push("/skills/packs")}
           onSubmit={async (values) => {

@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/auth/clerk";
 
 import { ApiError } from "@/api/mutator";
+import { useTranslation } from "@/lib/i18n";
 import {
   type listBoardsApiV1BoardsGetResponse,
   updateBoardApiV1BoardsBoardIdPatch,
@@ -31,6 +32,7 @@ const slugify = (value: string) =>
 export default function NewBoardGroupPage() {
   const router = useRouter();
   const { isSignedIn } = useAuth();
+  const { t } = useTranslation();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -125,11 +127,11 @@ export default function NewBoardGroupPage() {
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to create a board group.",
+        message: t("boardGroups.signInCreate"),
         forceRedirectUrl: "/board-groups/new",
       }}
-      title="Create board group"
-      description="Groups help agents discover related work across boards."
+      title={t("boardGroups.createTitle")}
+      description={t("boardGroups.createDesc")}
     >
       <form
         onSubmit={handleSubmit}
@@ -138,12 +140,12 @@ export default function NewBoardGroupPage() {
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-900">
-              Group name <span className="text-red-500">*</span>
+              {t("boardGroups.groupName")} <span className="text-red-500">*</span>
             </label>
             <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="e.g. Release hardening"
+              placeholder={t("boardGroups.groupNamePlaceholder")}
               disabled={isCreating}
             />
           </div>
@@ -156,7 +158,7 @@ export default function NewBoardGroupPage() {
           <Textarea
             value={description}
             onChange={(event) => setDescription(event.target.value)}
-            placeholder="What ties these boards together? What should agents coordinate on?"
+            placeholder={t("boardGroups.descriptionPlaceholder")}
             className="min-h-[120px]"
             disabled={isCreating}
           />
@@ -164,21 +166,21 @@ export default function NewBoardGroupPage() {
 
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="text-sm font-medium text-slate-900">Boards</label>
+            <label className="text-sm font-medium text-slate-900">{t("boardGroups.boardsLabel")}</label>
             <span className="text-xs text-slate-500">
-              {selectedBoardIds.size} selected
+              {selectedBoardIds.size} {t("boardGroups.selected")}
             </span>
           </div>
           <Input
             value={boardSearch}
             onChange={(event) => setBoardSearch(event.target.value)}
-            placeholder="Search boards..."
+            placeholder={t("boardGroups.searchBoards")}
             disabled={isCreating}
           />
           <div className="max-h-64 overflow-auto rounded-xl border border-slate-200 bg-slate-50/40">
             {boardsQuery.isLoading ? (
               <div className="px-4 py-6 text-sm text-slate-500">
-                Loading boards…
+                {t("boardGroups.loadingBoards")}
               </div>
             ) : boardsQuery.error ? (
               <div className="px-4 py-6 text-sm text-rose-700">
@@ -186,7 +188,7 @@ export default function NewBoardGroupPage() {
               </div>
             ) : boards.length === 0 ? (
               <div className="px-4 py-6 text-sm text-slate-500">
-                No boards found.
+                {t("boardGroups.noBoardsFound")}
               </div>
             ) : (
               <ul className="divide-y divide-slate-200">
@@ -232,7 +234,7 @@ export default function NewBoardGroupPage() {
                               </span>
                               {isAlreadyGrouped ? (
                                 <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-900">
-                                  currently grouped
+                                  {t("boardGroups.currentlyGrouped")}
                                 </span>
                               ) : null}
                             </div>
@@ -245,9 +247,7 @@ export default function NewBoardGroupPage() {
             )}
           </div>
           <p className="text-xs text-slate-500">
-            Optional. Selected boards will be assigned to this group after
-            creation. You can change membership later in group edit or board
-            settings.
+            {t("boardGroups.boardsOptional")}
           </p>
         </div>
 
@@ -260,10 +260,10 @@ export default function NewBoardGroupPage() {
             onClick={() => router.push("/board-groups")}
             disabled={isCreating}
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button type="submit" disabled={isCreating || !isFormReady}>
-            {isCreating ? "Creating…" : "Create group"}
+            {isCreating ? t("boardGroups.creating") : t("boardGroups.createButton")}
           </Button>
         </div>
 

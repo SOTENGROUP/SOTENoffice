@@ -12,6 +12,7 @@ import { useCreateGatewayApiV1GatewaysPost } from "@/api/generated/gateways/gate
 import { useOrganizationMembership } from "@/lib/use-organization-membership";
 import { GatewayForm } from "@/components/gateways/GatewayForm";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
+import { useTranslation } from "@/lib/i18n";
 import {
   DEFAULT_WORKSPACE_ROOT,
   checkGatewayConnection,
@@ -22,6 +23,7 @@ import {
 export default function NewGatewayPage() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
+  const { t } = useTranslation();
 
   const { isAdmin } = useOrganizationMembership(isSignedIn);
 
@@ -47,7 +49,7 @@ export default function NewGatewayPage() {
         }
       },
       onError: (err) => {
-        setError(err.message || "Something went wrong.");
+        setError(err.message || t("gateways.somethingWentWrong"));
       },
     },
   });
@@ -84,7 +86,7 @@ export default function NewGatewayPage() {
     if (!isSignedIn) return;
 
     if (!name.trim()) {
-      setError("Gateway name is required.");
+      setError(t("gateways.gatewayNameRequired"));
       return;
     }
     const gatewayValidation = validateGatewayUrl(gatewayUrl);
@@ -95,7 +97,7 @@ export default function NewGatewayPage() {
       return;
     }
     if (!workspaceRoot.trim()) {
-      setError("Workspace root is required.");
+      setError(t("gateways.workspaceRootRequired"));
       return;
     }
 
@@ -113,13 +115,13 @@ export default function NewGatewayPage() {
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to create a gateway.",
+        message: t("gateways.signInCreate"),
         forceRedirectUrl: "/gateways/new",
       }}
-      title="Create gateway"
-      description="Configure an OpenClaw gateway for mission control."
+      title={t("gateways.createTitle")}
+      description={t("gateways.createDesc")}
       isAdmin={isAdmin}
-      adminOnlyMessage="Only organization owners and admins can create gateways."
+      adminOnlyMessage={t("gateways.adminOnlyCreate")}
     >
       <GatewayForm
         name={name}
@@ -133,9 +135,9 @@ export default function NewGatewayPage() {
         isLoading={isLoading}
         canSubmit={canSubmit}
         workspaceRootPlaceholder={DEFAULT_WORKSPACE_ROOT}
-        cancelLabel="Cancel"
-        submitLabel="Create gateway"
-        submitBusyLabel="Creating…"
+        cancelLabel={t("common.cancel")}
+        submitLabel={t("gateways.createTitle")}
+        submitBusyLabel={t("gateways.creating")}
         onSubmit={handleSubmit}
         onCancel={() => router.push("/gateways")}
         onRunGatewayCheck={runGatewayCheck}

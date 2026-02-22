@@ -2,6 +2,7 @@ import { type FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 
 import type { BoardRead } from "@/api/generated/model";
+import { useTranslation } from "@/lib/i18n";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -56,6 +57,7 @@ export function CustomFieldForm({
   cancelHref = "/custom-fields",
   onSubmit,
 }: CustomFieldFormProps) {
+  const { t } = useTranslation();
   const [formState, setFormState] =
     useState<CustomFieldFormState>(initialFormState);
   const [boardSearch, setBoardSearch] = useState("");
@@ -97,12 +99,12 @@ export function CustomFieldForm({
     >
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          Basic configuration
+          {t("customFields.sectionBasicConfig")}
         </p>
         <div className="mt-4 grid gap-6 md:grid-cols-2">
           <label className="space-y-1">
             <span className="text-sm font-semibold text-slate-900">
-              Field key
+              {t("customFields.fieldKeyLabel")}
             </span>
             <Input
               value={formState.fieldKey}
@@ -112,26 +114,28 @@ export function CustomFieldForm({
                   fieldKey: event.target.value,
                 }))
               }
-              placeholder="e.g. client_name"
+              placeholder={t("customFields.fieldKeyPlaceholder")}
               readOnly={mode === "edit"}
               disabled={isSubmitting || mode === "edit"}
               required={mode === "create"}
             />
             {mode === "edit" ? (
               <span className="text-xs text-slate-500">
-                Field key cannot be changed after creation.
+                {t("customFields.fieldKeyReadOnly")}
               </span>
             ) : null}
           </label>
 
           <label className="space-y-1">
-            <span className="text-sm font-semibold text-slate-900">Label</span>
+            <span className="text-sm font-semibold text-slate-900">
+              {t("customFields.labelLabel")}
+            </span>
             <Input
               value={formState.label}
               onChange={(event) =>
                 setFormState((prev) => ({ ...prev, label: event.target.value }))
               }
-              placeholder="e.g. Client name"
+              placeholder={t("customFields.labelPlaceholder")}
               disabled={isSubmitting}
               required
             />
@@ -139,7 +143,7 @@ export function CustomFieldForm({
 
           <label className="space-y-1">
             <span className="text-sm font-semibold text-slate-900">
-              Field type
+              {t("customFields.fieldTypeLabel")}
             </span>
             <Select
               value={formState.fieldType}
@@ -152,7 +156,7 @@ export function CustomFieldForm({
               disabled={isSubmitting}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select field type" />
+                <SelectValue placeholder={t("customFields.fieldTypePlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 {CUSTOM_FIELD_TYPE_OPTIONS.map((option) => (
@@ -166,7 +170,7 @@ export function CustomFieldForm({
 
           <label className="space-y-1">
             <span className="text-sm font-semibold text-slate-900">
-              UI visible
+              {t("customFields.uiVisibleLabel")}
             </span>
             <Select
               value={formState.uiVisibility}
@@ -179,7 +183,7 @@ export function CustomFieldForm({
               disabled={isSubmitting}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select visibility" />
+                <SelectValue placeholder={t("customFields.visibilityPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 {CUSTOM_FIELD_VISIBILITY_OPTIONS.map((option) => (
@@ -204,18 +208,18 @@ export function CustomFieldForm({
             }
             disabled={isSubmitting}
           />
-          Required
+          {t("customFields.requiredLabel")}
         </label>
       </div>
 
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          Validation and defaults
+          {t("customFields.sectionValidation")}
         </p>
         <div className="mt-4 space-y-4">
           <label className="space-y-1">
             <span className="text-sm font-semibold text-slate-900">
-              Validation regex
+              {t("customFields.validationRegexLabel")}
             </span>
             <Input
               value={formState.validationRegex}
@@ -225,20 +229,20 @@ export function CustomFieldForm({
                   validationRegex: event.target.value,
                 }))
               }
-              placeholder="Optional. Example: ^[A-Z]{3}$"
+              placeholder={t("customFields.validationRegexPlaceholder")}
               disabled={
                 isSubmitting ||
                 !STRING_VALIDATION_FIELD_TYPES.has(formState.fieldType)
               }
             />
             <p className="text-xs text-slate-500">
-              Supported for text/date/date-time/url fields.
+              {t("customFields.validationRegexHint")}
             </p>
           </label>
 
           <label className="space-y-1">
             <span className="text-sm font-semibold text-slate-900">
-              Default value
+              {t("customFields.defaultValueLabel")}
             </span>
             <Textarea
               value={formState.defaultValue}
@@ -249,14 +253,14 @@ export function CustomFieldForm({
                 }))
               }
               rows={3}
-              placeholder='Optional default value. For booleans use "true"/"false"; for JSON use an object or array.'
+              placeholder={t("customFields.defaultValuePlaceholder")}
               disabled={isSubmitting}
             />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm font-semibold text-slate-900">
-              Description
+              {t("customFields.descriptionLabel")}
             </span>
             <Textarea
               value={formState.description}
@@ -267,7 +271,7 @@ export function CustomFieldForm({
                 }))
               }
               rows={3}
-              placeholder="Optional description used by agents and UI"
+              placeholder={t("customFields.descriptionPlaceholder")}
               disabled={isSubmitting}
             />
           </label>
@@ -277,23 +281,26 @@ export function CustomFieldForm({
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Board bindings
+            {t("customFields.sectionBoardBindings")}
           </p>
           <span className="text-xs text-slate-500">
-            {selectedBoardIds.size} selected
+            {t("customFields.boardBindingsSelected").replace(
+              "{count}",
+              String(selectedBoardIds.size),
+            )}
           </span>
         </div>
         <div className="mt-4 space-y-2">
           <Input
             value={boardSearch}
             onChange={(event) => setBoardSearch(event.target.value)}
-            placeholder="Search boards..."
+            placeholder={t("customFields.searchBoardsPlaceholder")}
             disabled={isSubmitting}
           />
           <div className="max-h-64 overflow-auto rounded-xl border border-slate-200 bg-slate-50/40">
             {boardsLoading ? (
               <div className="px-4 py-6 text-sm text-slate-500">
-                Loading boards…
+                {t("customFields.loadingBoards")}
               </div>
             ) : boardsError ? (
               <div className="px-4 py-6 text-sm text-rose-700">
@@ -301,7 +308,7 @@ export function CustomFieldForm({
               </div>
             ) : filteredBoards.length === 0 ? (
               <div className="px-4 py-6 text-sm text-slate-500">
-                No boards found.
+                {t("customFields.noBoardsFound")}
               </div>
             ) : (
               <ul className="divide-y divide-slate-200">
@@ -343,7 +350,7 @@ export function CustomFieldForm({
             )}
           </div>
           <p className="text-xs text-slate-500">
-            Required. The custom field appears on tasks in selected boards.
+            {t("customFields.boardBindingsHint")}
           </p>
         </div>
       </div>
@@ -357,7 +364,7 @@ export function CustomFieldForm({
           className={buttonVariants({ variant: "outline" })}
           aria-disabled={isSubmitting}
         >
-          Cancel
+          {t("common.cancel")}
         </Link>
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting ? submittingLabel : submitLabel}

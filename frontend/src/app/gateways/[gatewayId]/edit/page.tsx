@@ -17,6 +17,7 @@ import { useOrganizationMembership } from "@/lib/use-organization-membership";
 import type { GatewayUpdate } from "@/api/generated/model";
 import { GatewayForm } from "@/components/gateways/GatewayForm";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
+import { useTranslation } from "@/lib/i18n";
 import {
   DEFAULT_WORKSPACE_ROOT,
   checkGatewayConnection,
@@ -28,6 +29,7 @@ export default function EditGatewayPage() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const { t } = useTranslation();
   const gatewayIdParam = params?.gatewayId;
   const gatewayId = Array.isArray(gatewayIdParam)
     ? gatewayIdParam[0]
@@ -72,7 +74,7 @@ export default function EditGatewayPage() {
         }
       },
       onError: (err) => {
-        setError(err.message || "Something went wrong.");
+        setError(err.message || t("gateways.somethingWentWrong"));
       },
     },
   });
@@ -118,7 +120,7 @@ export default function EditGatewayPage() {
     if (!isSignedIn || !gatewayId) return;
 
     if (!resolvedName.trim()) {
-      setError("Gateway name is required.");
+      setError(t("gateways.gatewayNameRequired"));
       return;
     }
     const gatewayValidation = validateGatewayUrl(resolvedGatewayUrl);
@@ -129,7 +131,7 @@ export default function EditGatewayPage() {
       return;
     }
     if (!resolvedWorkspaceRoot.trim()) {
-      setError("Workspace root is required.");
+      setError(t("gateways.workspaceRootRequired"));
       return;
     }
 
@@ -145,20 +147,20 @@ export default function EditGatewayPage() {
     updateMutation.mutate({ gatewayId, data: payload });
   };
 
+  const pageTitle = resolvedName.trim()
+    ? `${t("gateways.editGatewayPrefix")} ${resolvedName.trim()}`
+    : t("gateways.editGateway");
+
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to edit a gateway.",
+        message: t("gateways.signInEdit"),
         forceRedirectUrl: `/gateways/${gatewayId}/edit`,
       }}
-      title={
-        resolvedName.trim()
-          ? `Edit gateway — ${resolvedName.trim()}`
-          : "Edit gateway"
-      }
-      description="Update connection settings for this OpenClaw gateway."
+      title={pageTitle}
+      description={t("gateways.editDesc")}
       isAdmin={isAdmin}
-      adminOnlyMessage="Only organization owners and admins can edit gateways."
+      adminOnlyMessage={t("gateways.adminOnlyEdit")}
     >
       <GatewayForm
         name={resolvedName}
@@ -172,9 +174,9 @@ export default function EditGatewayPage() {
         isLoading={isLoading}
         canSubmit={canSubmit}
         workspaceRootPlaceholder={DEFAULT_WORKSPACE_ROOT}
-        cancelLabel="Back"
-        submitLabel="Save changes"
-        submitBusyLabel="Saving…"
+        cancelLabel={t("common.back")}
+        submitLabel={t("gateways.saveChanges")}
+        submitBusyLabel={t("gateways.saving")}
         onSubmit={handleSubmit}
         onCancel={() => router.push("/gateways")}
         onRunGatewayCheck={runGatewayCheck}

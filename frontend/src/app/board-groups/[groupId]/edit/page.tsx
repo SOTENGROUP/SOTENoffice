@@ -8,6 +8,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/auth/clerk";
 
 import { ApiError } from "@/api/mutator";
+import { useTranslation } from "@/lib/i18n";
 import {
   type listBoardsApiV1BoardsGetResponse,
   updateBoardApiV1BoardsBoardIdPatch,
@@ -37,6 +38,7 @@ const slugify = (value: string) =>
 
 export default function EditBoardGroupPage() {
   const { isSignedIn } = useAuth();
+  const { t } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
   const params = useParams();
@@ -280,11 +282,11 @@ export default function EditBoardGroupPage() {
   return (
     <DashboardPageLayout
       signedOut={{
-        message: "Sign in to edit board groups.",
+        message: t("boardGroups.signInEdit"),
         forceRedirectUrl: `/board-groups/${groupId ?? ""}/edit`,
       }}
       title={title}
-      description="Update the shared context that connects boards in this group."
+      description={t("boardGroups.editDesc")}
     >
       <form
         onSubmit={handleSubmit}
@@ -299,12 +301,12 @@ export default function EditBoardGroupPage() {
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-900">
-              Group name <span className="text-red-500">*</span>
+              {t("boardGroups.groupName")} <span className="text-red-500">*</span>
             </label>
             <Input
               value={resolvedName}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Group name"
+              placeholder={t("boardGroups.groupName")}
               disabled={isLoading || !baseGroup}
             />
           </div>
@@ -317,7 +319,7 @@ export default function EditBoardGroupPage() {
           <Textarea
             value={resolvedDescription}
             onChange={(event) => setDescription(event.target.value)}
-            placeholder="What ties these boards together?"
+            placeholder={t("boardGroups.descriptionPlaceholder")}
             className="min-h-[120px]"
             disabled={isLoading || !baseGroup}
           />
@@ -326,28 +328,28 @@ export default function EditBoardGroupPage() {
         <div className="space-y-2 border-t border-slate-100 pt-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-sm font-medium text-slate-900">Boards</p>
+              <p className="text-sm font-medium text-slate-900">{t("boardGroups.boardsLabel")}</p>
               <p className="mt-1 text-xs text-slate-500">
                 Assign boards to this group to share context across related
                 work.
               </p>
             </div>
             <span className="text-xs text-slate-500">
-              {selectedBoardIds.size} selected
+              {selectedBoardIds.size} {t("boardGroups.selected")}
             </span>
           </div>
 
           <Input
             value={boardSearch}
             onChange={(event) => setBoardSearch(event.target.value)}
-            placeholder="Search boards..."
+            placeholder={t("boardGroups.searchBoards")}
             disabled={isLoading || !baseGroup}
           />
 
           <div className="max-h-64 overflow-auto rounded-xl border border-slate-200 bg-slate-50/40">
             {boardsLoading && boards.length === 0 ? (
               <div className="px-4 py-6 text-sm text-slate-500">
-                Loading boards…
+                {t("boardGroups.loadingBoards")}
               </div>
             ) : boardsError ? (
               <div className="px-4 py-6 text-sm text-rose-700">
@@ -355,7 +357,7 @@ export default function EditBoardGroupPage() {
               </div>
             ) : boards.length === 0 ? (
               <div className="px-4 py-6 text-sm text-slate-500">
-                No boards found.
+                {t("boardGroups.noBoardsFound")}
               </div>
             ) : (
               <ul className="divide-y divide-slate-200">
@@ -439,13 +441,13 @@ export default function EditBoardGroupPage() {
             onClick={() => router.push(`/board-groups/${groupId ?? ""}`)}
             disabled={isLoading}
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
             disabled={isLoading || !baseGroup || !isFormReady}
           >
-            {isLoading ? "Saving…" : "Save changes"}
+            {isLoading ? t("boardGroups.savingChanges") : t("boardGroups.saveChanges")}
           </Button>
         </div>
       </form>
