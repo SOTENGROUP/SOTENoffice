@@ -133,6 +133,37 @@ OpenClaw Mission Control 是一个集中式运维与治理平台，支持跨团�
 
 ---
 
+### Phase 8 (2026-02-23) — 后端集成测试
+
+**已完成工作**: test/phase8-backend-integration 分支
+
+**主要内容**:
+- 跨模块集成测试验证: M4 WebSocket 中继 ↔ M3 H5 认证 ↔ M8 事件总线端到端流程
+- 修复 SQLAlchemy `metadata` 保留字段名冲突 (`agent_capabilities.metadata` → `extra_data`)
+- 修复 M5 意外包含 M13 文件问题
+- next-intl 和 react-i18next 迁移到自定义 `@/lib/i18n` 库
+- 验证 21/21 M4 测试、11/11 M9 测试、17/17 M11 测试均通过
+
+**提交记录**:
+- `b6a32b3` fix: replace next-intl and react-i18next imports with custom @/lib/i18n
+- `b946b83` chore: add dev server launch config
+- `0575532` chore: add CI/CD deploy pipeline and dev server launch config
+
+---
+
+### Phase 9 (2026-02-23) — 文档完善 + 最终验收
+
+**已完成工作**: docs/phase9-documentation 分支
+
+**文档交付物**:
+- `docs/DEPLOYMENT_GUIDE.md` — 完整部署指南 (本地/Docker/阿里云三种模式)
+- `docs/API_OVERVIEW.md` — API 概览 (三种认证方式 + 所有端点 + WebSocket/SSE 规范)
+- `docs/ACCEPTANCE_REPORT.md` — 13 模块逐一验收报告 + 非功能验收 + 后续建议
+- `docs/DEVELOPMENT_PROGRESS.md` — 更新 Phase 8/9 进度记录
+- `README.md` — 更新新功能说明和导航目录
+
+---
+
 ## 四、国际化 (i18n) 规范
 
 ### 基本原则
