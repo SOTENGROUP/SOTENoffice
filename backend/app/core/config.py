@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     # Board Sync (M9)
     board_sync_redis_url: str = "redis://localhost:6379/3"
 
+    # Knowledge Hub (M12)
+    embedding_provider: str = "none"  # openai | tongyi | local | none
+    embedding_api_key: str = ""
+    embedding_model: str = "text-embedding-ada-002"
+    embedding_base_url: str = ""
+    knowledge_search_language: str = "english"
+    knowledge_max_document_size_mb: int = 50
+
     # OpenClaw gateway runtime compatibility
     gateway_min_version: str = "2026.02.9"
 
