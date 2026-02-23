@@ -26,6 +26,9 @@ from app.api.gateway_registration import router as gateway_registration_router
 from app.api.gateway_registration import ws_router as gateway_ws_router
 from app.api.gateways import router as gateways_router
 from app.api.agent_events import router as agent_events_router
+from app.api.pipelines import router as pipelines_router
+from app.api.pipelines import runs_router as pipeline_runs_router
+from app.api.pipelines import templates_router as pipeline_templates_router
 from app.api.agent_suggestions import _AGENT_SUGGESTION_ROUTER as agent_suggestion_agent_router
 from app.api.agent_suggestions import router as agent_suggestions_router
 from app.api.h5_auth import router as h5_auth_router
@@ -196,6 +199,13 @@ OPENAPI_TAGS = [
         "description": (
             "Gateway-main control workflows that message board leads or broadcast "
             "coordination requests."
+        ),
+    },
+    {
+        "name": "pipelines",
+        "description": (
+            "Workflow pipeline definitions, execution runs, stage management, and "
+            "predefined templates for automated multi-step workflows."
         ),
     },
 ]
@@ -593,6 +603,13 @@ api_v1.include_router(agent_suggestions_router)
 api_v1.include_router(proactive_rules_router)
 api_v1.include_router(agent_suggestion_agent_router)
 api_v1.include_router(agent_events_router)
+api_v1.include_router(agent_teams_router)
+api_v1.include_router(agent_capabilities_router)
+api_v1.include_router(agent_capabilities_search_router)
+api_v1.include_router(command_center_router)
+api_v1.include_router(pipelines_router)
+api_v1.include_router(pipeline_runs_router)
+api_v1.include_router(pipeline_templates_router)
 app.include_router(api_v1)
 app.include_router(gateway_ws_router)
 app.include_router(h5_ws_router)

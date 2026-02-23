@@ -30,6 +30,7 @@ from app.models.task_custom_fields import (
     TaskCustomFieldDefinition,
     TaskCustomFieldValue,
 )
+from app.models.pipelines import Pipeline, PipelineRun, PipelineStageTask
 from app.models.task_dependencies import TaskDependency
 from app.models.task_fingerprints import TaskFingerprint
 from app.models.tasks import Task
@@ -66,6 +67,9 @@ __all__ = [
     "OrganizationBoardAccess",
     "OrganizationInvite",
     "OrganizationInviteBoardAccess",
+    "Pipeline",
+    "PipelineRun",
+    "PipelineStageTask",
     "TaskDependency",
     "Task",
     "TaskFingerprint",
