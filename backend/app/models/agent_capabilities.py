@@ -14,7 +14,7 @@ from app.models.base import QueryModel
 
 
 class AgentCapability(QueryModel, table=True):
-    """Capability profile entry for an agent with proficiency level."""
+    """Agent 能力档案条目，包含熟练度等级。"""
 
     __tablename__ = "agent_capabilities"  # pyright: ignore[reportAssignmentType]
 
