@@ -12,7 +12,12 @@ from app.api.deps import SESSION_DEP, require_org_admin
 from app.db.pagination import paginate
 from app.models.h5_users import H5User, H5UserAgentAssignment
 from app.schemas.common import OkResponse
-from app.schemas.h5_auth import H5AssignAgentRequest, H5AssignmentRead, H5UserRead
+from app.schemas.h5_auth import (
+    H5AssignAgentRequest,
+    H5AssignmentRead,
+    H5UserMeResponse,
+    H5UserRead,
+)
 from app.schemas.pagination import DefaultLimitOffsetPage
 from app.services.h5_user_service import assign_user_to_agent, unassign_user_from_agent
 from app.services.organizations import OrganizationContext
@@ -41,6 +46,30 @@ async def list_h5_users(
         .order_by(col(H5User.created_at).desc())
     )
     return await paginate(session, statement)
+
+
+@router.get(
+    "/{h5_user_id}",
+    response_model=H5UserMeResponse,
+    summary="Get H5 User",
+)
+async def get_h5_user(
+    h5_user_id: UUID,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> H5UserMeResponse:
+    """Return a single H5 user with their agent assignments."""
+    user = await session.get(H5User, h5_user_id)
+    if user is None or user.organization_id != ctx.organization.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    assignments = await H5UserAgentAssignment.objects.filter_by(
+        h5_user_id=h5_user_id,
+    ).all(session)
+    return H5UserMeResponse(
+        user=H5UserRead.model_validate(user),
+        assignments=[H5AssignmentRead.model_validate(a) for a in assignments],
+    )
 
 
 @router.post(

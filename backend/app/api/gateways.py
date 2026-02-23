@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlmodel import col
 
 from app.api.deps import require_org_admin
@@ -24,6 +26,7 @@ from app.schemas.gateways import (
     GatewayUpdate,
 )
 from app.schemas.pagination import DefaultLimitOffsetPage
+from app.services.gateway_ws_manager import gateway_ws_manager
 from app.services.openclaw.admin_service import GatewayAdminLifecycleService
 from app.services.openclaw.session_service import GatewayTemplateSyncQuery
 
@@ -45,6 +48,23 @@ OVERWRITE_QUERY = Query(default=False)
 LEAD_ONLY_QUERY = Query(default=False)
 BOARD_ID_QUERY = Query(default=None)
 _RUNTIME_TYPE_REFERENCES = (UUID,)
+
+
+class GatewayConnectionsResponse(BaseModel):
+    gateway_id: str
+    is_connected: bool
+    active_connections: int
+
+
+class GatewayMetrics(BaseModel):
+    cpu_pct: float | None = None
+    memory_mb: float | None = None
+    active_sessions: int | None = None
+    agent_count: int | None = None
+    status: str
+    last_heartbeat_at: datetime | None = None
+    gateway_version: str | None = None
+    gateway_ip: str | None = None
 
 
 def _template_sync_query(
@@ -143,6 +163,52 @@ async def update_gateway(
     await crud.patch(session, gateway, updates)
     await service.ensure_main_agent(gateway, auth, action="update")
     return gateway
+
+
+@router.get("/{gateway_id}/connections", response_model=GatewayConnectionsResponse)
+async def get_gateway_connections(
+    gateway_id: UUID,
+    session: AsyncSession = SESSION_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> GatewayConnectionsResponse:
+    """Return live WebSocket connection status for a gateway."""
+    service = GatewayAdminLifecycleService(session)
+    await service.require_gateway(
+        gateway_id=gateway_id,
+        organization_id=ctx.organization.id,
+    )
+    is_connected = gateway_ws_manager.is_connected(gateway_id)
+    return GatewayConnectionsResponse(
+        gateway_id=str(gateway_id),
+        is_connected=is_connected,
+        active_connections=1 if is_connected else 0,
+    )
+
+
+@router.get("/{gateway_id}/metrics", response_model=GatewayMetrics)
+async def get_gateway_metrics(
+    gateway_id: UUID,
+    session: AsyncSession = SESSION_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> GatewayMetrics:
+    """Return health metrics for a gateway derived from heartbeat data."""
+    service = GatewayAdminLifecycleService(session)
+    gateway = await service.require_gateway(
+        gateway_id=gateway_id,
+        organization_id=ctx.organization.id,
+    )
+    connection_info: dict[str, Any] = gateway.connection_info or {}
+    raw_metrics: dict[str, Any] = connection_info.get("metrics") or {}
+    return GatewayMetrics(
+        cpu_pct=raw_metrics.get("cpu_pct"),
+        memory_mb=raw_metrics.get("memory_mb"),
+        active_sessions=raw_metrics.get("active_sessions"),
+        agent_count=raw_metrics.get("agent_count"),
+        status=gateway.status,
+        last_heartbeat_at=gateway.last_heartbeat_at,
+        gateway_version=connection_info.get("version"),
+        gateway_ip=connection_info.get("ip"),
+    )
 
 
 @router.post("/{gateway_id}/templates/sync", response_model=GatewayTemplatesSyncResult)

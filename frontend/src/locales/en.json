@@ -33,7 +33,8 @@
     "onboarding": "Onboarding",
     "calendar": "Calendar",
     "teams": "Teams",
-    "commandCenter": "Command Center"
+    "commandCenter": "Command Center",
+    "h5Users": "H5 Users"
   },
   "status": {
     "allSystemsOperational": "All systems operational",
@@ -681,6 +682,56 @@
     "delete": "Delete",
     "deleting": "Deleting…",
     "cancel": "Cancel"
+  },
+  "h5Users": {
+    "title": "H5 Users",
+    "signInPrompt": "Sign in to manage H5 users.",
+    "description": "Manage mobile web users and their agent assignments.",
+    "adminOnly": "Only organization owners and admins can manage H5 users.",
+    "noUsers": "No H5 users yet",
+    "noUsersDesc": "H5 users will appear here once they register via the mobile web app.",
+    "detail": "User detail",
+    "detailDesc": "View user profile and manage agent assignments.",
+    "backToUsers": "Back to users",
+    "userNotFound": "User not found.",
+    "username": "Username",
+    "phone": "Phone",
+    "lastLogin": "Last login",
+    "manageAssignments": "Manage assignments",
+    "manageAssignmentsDesc": "Assign or remove agent access for {username}.",
+    "currentAssignments": "Current assignments",
+    "noAssignments": "No agent assignments yet.",
+    "assignToAgent": "Assign to agent",
+    "selectAgent": "Select agent…",
+    "assign": "Assign",
+    "assigning": "Assigning…",
+    "unassign": "Unassign",
+    "status": {
+      "active": "Active",
+      "suspended": "Suspended",
+      "deleted": "Deleted"
+    }
+  },
+  "gatewayHealth": {
+    "connections": "Connections",
+    "connectionsDesc": "Live connection status and health metrics for this gateway.",
+    "liveConnections": "Live connections",
+    "gateway": "Gateway",
+    "wsConnected": "WebSocket connected",
+    "wsDisconnected": "WebSocket disconnected",
+    "noActiveConnections": "No active WebSocket connections.",
+    "metrics": "Health metrics",
+    "cpu": "CPU",
+    "memory": "Memory",
+    "activeSessions": "Active sessions",
+    "agentCount": "Agents",
+    "ip": "IP address",
+    "version": "Version",
+    "noMetrics": "No metrics available.",
+    "online": "Online",
+    "pending": "Pending",
+    "offline": "Offline",
+    "error": "Error"
   },
   "boardSync": {
     "connected": "Live",
