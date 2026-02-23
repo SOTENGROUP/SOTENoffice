@@ -39,6 +39,10 @@ from app.api.tags import router as tags_router
 from app.api.task_custom_fields import router as task_custom_fields_router
 from app.api.tasks import router as tasks_router
 from app.api.users import router as users_router
+from app.api.agent_teams import router as agent_teams_router
+from app.api.agent_teams import capabilities_router as agent_capabilities_router
+from app.api.agent_teams import search_router as agent_capabilities_search_router
+from app.api.command_center import router as command_center_router
 from app.core.config import settings
 from app.core.error_handling import install_error_handling
 from app.core.logging import configure_logging, get_logger
@@ -582,6 +586,10 @@ api_v1.include_router(agent_suggestions_router)
 api_v1.include_router(proactive_rules_router)
 api_v1.include_router(agent_suggestion_agent_router)
 api_v1.include_router(agent_events_router)
+api_v1.include_router(agent_teams_router)
+api_v1.include_router(agent_capabilities_router)
+api_v1.include_router(agent_capabilities_search_router)
+api_v1.include_router(command_center_router)
 app.include_router(api_v1)
 app.include_router(gateway_ws_router)
 
